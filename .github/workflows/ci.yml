@@ -32,11 +32,6 @@ jobs:
             tests/test_nlu_production.py \
             tests/test_smart_memory_coverage.py \
             -q
-      - name: Shell typecheck + build
-        run: |
-          cd shell
-          npm ci || npm install
-          npm run build
       - name: Config fail-closed
         run: |
           python - <<'PY'
@@ -54,6 +49,42 @@ jobs:
               assert "RESIDENCE_API_KEY" in str(e)
               print("fail-closed ok")
           PY
+      - name: Secrets not in tree
+        run: |
+          ! git ls-files | grep -E '(^\.env$|\.gemini_oauth|credentials\.json)' 
+          test -f SECURITY.md
+          test -f PRODUCTION.md
+
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install, test, build
+        working-directory: shell
+        run: |
+          npm ci || npm install
+          npm test
+          npm run build
+
+  desktop-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax + assets
+        working-directory: desktop
+        run: |
+          node --check main.js
+          node --check permission.js
+          node --check integrations/macos.js
+          test -f assets/trayTemplate.png
+          test -f assets/Residence.icns
+          test -f entitlements.mac.plist
 
   desktop-pack:
     runs-on: macos-latest

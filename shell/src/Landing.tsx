@@ -125,14 +125,21 @@ export default function Landing() {
         <section className="gate-download">
           <div className="gate-copy">
             <h1>Get Residence for Mac</h1>
-            <p>Scan the QR, unzip, open. Menu-bar agent for a shared personal Fact graph.</p>
+            <p>
+              Menu-bar agent: capture Claude / Notes / selection → Accept → Facts + native write-back.
+            </p>
             <a className="gate-link" href={downloadUrl} download>
               Download Residence-mac.zip
             </a>
-            <p className="gate-note">
-              Apple Silicon · unsigned build · System Settings → Privacy &amp; Security → Open Anyway
-              if prompted. Core on :8700.
-            </p>
+            <ol className="gate-steps">
+              <li>Unzip → open <code>Residence.app</code></li>
+              <li>If blocked: Privacy &amp; Security → Open Anyway</li>
+              <li>Start Core on :8700 (<code>./scripts/residence-up.sh</code>)</li>
+              <li>
+                ⌘⇧R capture · ⌘⇧I Accept inbox
+              </li>
+            </ol>
+            <p className="gate-note">Apple Silicon · unsigned local build · Core required for live Facts.</p>
           </div>
           <div className="gate-qr">
             {qrDataUrl ? (

@@ -24,6 +24,11 @@ import {
 } from "./icons";
 import { createSpeechSession, speechSupported } from "./speech";
 import { JUDGE_FIXTURE } from "./judgeFixture";
+import {
+  isWinningJudgePath,
+  storyFromJudge,
+  toastForJudge,
+} from "./judgeDemo";
 
 type AppId =
   | "home"
@@ -477,12 +482,16 @@ export default function App({ skipVideo = false }: AppProps) {
             replay = true;
           }
         }
+        if (!replay && !isWinningJudgePath(result)) {
+          result = JUDGE_FIXTURE;
+          replay = true;
+        }
       } else {
         result = JUDGE_FIXTURE;
         replay = true;
       }
 
-      if (!result.ok || !result.blocked || result.leaked) {
+      if (!isWinningJudgePath(result)) {
         throw new Error("Demo did not complete the winning path — retry.");
       }
 
@@ -497,27 +506,11 @@ export default function App({ skipVideo = false }: AppProps) {
         blocked: result.blocked,
         reason: "Over your $40 weekly spend.",
       });
-      setStory(
-        result.steps.map((s) => ({
-          id: s.id,
-          title: s.title,
-          detail: s.detail,
-          tone:
-            s.id === "shop" && s.blocked
-              ? "warn"
-              : s.id === "wellness" && s.leaked
-                ? "warn"
-                : "good",
-        }))
-      );
+      setStory(storyFromJudge(result));
       if (result.why?.ok) setWhy({ headline: result.why.headline, because: result.why.because });
       if (result.closing) setClosing(result.closing);
       if (result.notifications?.length) pushBanners(result.notifications, 6);
-      setToast(
-        replay
-          ? "Replay path — Shop blocked, health private. Connect Core :8700 for live DataHub writes."
-          : "Shared memory won — Shop blocked, health stayed private."
-      );
+      setToast(toastForJudge(result, replay));
       setDemoDone(true);
       if (!replay) {
         await Promise.all([refreshAppFacts(), refreshActivity()]);

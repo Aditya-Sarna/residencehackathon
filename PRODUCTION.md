@@ -19,13 +19,17 @@ Target: **self-hosted personal OS** you can run every day without babysitting.
 | 11 | Mac first-run permission wizard | ✅ `desktop/first-run.html` |
 | 12 | Mac entitlements + Automation usage string | ✅ |
 | 13 | Desktop reconnect w/ exponential backoff + file logs | ✅ |
-| 14 | CI (pytest + Mac pack) | ✅ `.github/workflows/ci.yml` |
+| 14 | CI (pytest + shell vitest/build + desktop syntax + Mac pack) | ✅ `.github/workflows/ci.yml` |
 | 15 | `.env.example` — no secrets in git | ✅ |
 | 16 | Live Fact graph + glossary + history APIs | ✅ `/graph` `/glossary` `/facts/{id}/history` |
 | 17 | Native DataHub Assertions + Personal Context domain | ✅ |
 | 18 | GMS-first agent cache (TTL) + search batch 200 | ✅ |
 | 19 | DataHub UI deep links from Graph | ✅ |
 | 20 | Constant-time API key compare | ✅ `hmac.compare_digest` |
+| 21 | Offline judge replay (hosted shell never dead-ends) | ✅ `shell/src/judgeFixture.ts` |
+| 22 | Judge path unit contract (vitest) | ✅ `shell/src/judgeDemo.test.ts` |
+| 23 | Security policy | ✅ `SECURITY.md` |
+| 24 | Mac install steps on landing Download tab | ✅ `shell/src/Landing.tsx` |
 
 ## Operator runbook
 
