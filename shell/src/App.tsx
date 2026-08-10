@@ -23,6 +23,7 @@ import {
   IconYouTube,
 } from "./icons";
 import { createSpeechSession, speechSupported } from "./speech";
+import { JUDGE_FIXTURE } from "./judgeFixture";
 
 type AppId =
   | "home"
@@ -217,6 +218,8 @@ export default function App({ skipVideo = false }: AppProps) {
   } | null>(null);
   const [datahubOk, setDatahubOk] = useState<boolean | null>(null);
   const stageReady = coreOk === true && datahubOk === true;
+  /** Judge path always runnable — live Core when green, fixture replay when offline. */
+  const judgeReady = stageReady || (IS_JUDGE && coreOk === false);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [graphData, setGraphData] = useState<GraphResponse | null>(null);
   const [graphBusy, setGraphBusy] = useState(false);
@@ -458,19 +461,25 @@ export default function App({ skipVideo = false }: AppProps) {
     setDemoDone(false);
 
     const ok = await refreshReady();
-    if (!ok) {
-      setToast(readyMsg || "Core offline — start the Fact Broker first.");
-      setDemoRunning(false);
-      return;
-    }
 
     try {
-      let result: Awaited<ReturnType<typeof api.judgeDemo>>;
-      try {
-        result = await api.judgeDemo();
-      } catch {
-        await sleep(500);
-        result = await api.judgeDemo();
+      let result: Awaited<ReturnType<typeof api.judgeDemo>> & { replay?: boolean };
+      let replay = false;
+      if (ok) {
+        try {
+          result = await api.judgeDemo();
+        } catch {
+          await sleep(500);
+          try {
+            result = await api.judgeDemo();
+          } catch {
+            result = JUDGE_FIXTURE;
+            replay = true;
+          }
+        }
+      } else {
+        result = JUDGE_FIXTURE;
+        replay = true;
       }
 
       if (!result.ok || !result.blocked || result.leaked) {
@@ -504,29 +513,36 @@ export default function App({ skipVideo = false }: AppProps) {
       if (result.why?.ok) setWhy({ headline: result.why.headline, because: result.why.because });
       if (result.closing) setClosing(result.closing);
       if (result.notifications?.length) pushBanners(result.notifications, 6);
-      setToast("Shared memory won — Shop blocked, health stayed private.");
+      setToast(
+        replay
+          ? "Replay path — Shop blocked, health private. Connect Core :8700 for live DataHub writes."
+          : "Shared memory won — Shop blocked, health stayed private."
+      );
       setDemoDone(true);
-      await Promise.all([refreshAppFacts(), refreshActivity()]);
-      // Absolute closer: land on the live DataHub graph after the story settles
-      if (result.closing?.openGraph !== false) {
-        window.setTimeout(() => {
-          setHomeTab("graph");
-          void loadGraph();
-        }, 2200);
+      if (!replay) {
+        await Promise.all([refreshAppFacts(), refreshActivity()]);
+        if (result.closing?.openGraph !== false) {
+          window.setTimeout(() => {
+            setHomeTab("graph");
+            void loadGraph();
+          }, 2200);
+        }
       }
     } catch (e) {
       setToast(String(e));
-      void refreshReady(); // re-check instead of assuming Core died
+      void refreshReady();
     } finally {
       setDemoRunning(false);
     }
   };
 
-  // Judge: Space clicks the demo CTA; ?auto=1 fires once when stage is green + history wiped
+  // Judge: Space clicks the demo CTA; ?auto=1 fires once (live or offline replay)
   useEffect(() => {
     if (!IS_JUDGE && !IS_SMART) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || demoRunning || !stageReady) return;
+      if (e.code !== "Space" || demoRunning) return;
+      if (IS_SMART && !stageReady) return;
+      if (IS_JUDGE && !judgeReady) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       e.preventDefault();
@@ -535,15 +551,15 @@ export default function App({ skipVideo = false }: AppProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [demoRunning, stageReady]);
+  }, [demoRunning, stageReady, judgeReady]);
 
   useEffect(() => {
     if (!AUTO_JUDGE || autoStarted.current || showVideo || demoRunning || demoDone) return;
-    if (!stageReady || !historyReady) return;
+    if (!historyReady || !judgeReady) return;
     autoStarted.current = true;
     const t = window.setTimeout(() => demoBtnRef.current?.click(), 700);
     return () => window.clearTimeout(t);
-  }, [stageReady, historyReady, showVideo, demoRunning, demoDone]);
+  }, [judgeReady, historyReady, showVideo, demoRunning, demoDone]);
 
   useEffect(() => {
     if (!AUTO_SMART || autoStarted.current || showVideo || demoRunning || demoDone) return;
@@ -1307,7 +1323,7 @@ export default function App({ skipVideo = false }: AppProps) {
                               ref={demoBtnRef}
                               className={`demo-cta ${IS_JUDGE && !demoDone ? "pulse" : ""} ${demoDone ? "done" : ""}`}
                               type="button"
-                              disabled={demoRunning || !stageReady}
+                              disabled={demoRunning || (IS_JUDGE ? !judgeReady : !stageReady)}
                               onClick={runJudgeDemo}
                             >
                               <div>
@@ -1319,11 +1335,15 @@ export default function App({ skipVideo = false }: AppProps) {
                                       : "Play 30s demo"}
                                 </strong>
                                 <span>
-                                  {!stageReady
-                                    ? readyMsg || "Waiting for Core + DataHub…"
-                                    : AUTO_JUDGE && !demoDone
-                                      ? "Auto-starting… (or press Space)"
-                                      : "Wallet → infer → Shop block → Why · Space"}
+                                  {IS_JUDGE && !stageReady && judgeReady
+                                    ? AUTO_JUDGE && !demoDone
+                                      ? "Offline replay · auto-starting…"
+                                      : "Offline replay ready · Space (live needs Core :8700)"
+                                    : !stageReady
+                                      ? readyMsg || "Waiting for Core + DataHub…"
+                                      : AUTO_JUDGE && !demoDone
+                                        ? "Auto-starting… (or press Space)"
+                                        : "Wallet → infer → Shop block · Why · Space"}
                                 </span>
                               </div>
                               <em>→</em>

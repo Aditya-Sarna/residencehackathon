@@ -2,6 +2,10 @@
 
 **Thesis:** DataHub’s siloed-metadata problem, restated for a person — one shared personal context graph so Shopping, Wallet, Calendar, and Wellness stop lying to each other.
 
+**Live shell:** https://residencehackathon.vercel.app  
+**Judge (hosted):** https://residencehackathon.vercel.app/?judge&auto=1  
+**Repo:** https://github.com/Aditya-Sarna/residencehackathon
+
 ## DataHub tier used
 
 **Self-hosted OSS** (`datahub docker quickstart`).  
@@ -15,6 +19,11 @@ Agents are `CorpUser`s with read/write scopes. Staleness is app-side (`ttlSecond
 ```
 
 Spoken script: [`WIN.md`](WIN.md) · checklist: [`SUBMISSION.md`](SUBMISSION.md)
+
+| Mode | URL | Behavior |
+|---|---|---|
+| **Live** (preferred) | `/?judge&auto=1` with Core + DataHub | Real broker writes, lineage, Graph tab |
+| **Replay** (hosted / offline) | same URL without Core | Deterministic winning story so the shell never dead-ends |
 
 Manual: DataHub + Core `:8700` + shell → **http://localhost:5173/?judge&auto=1** (Space re-fires).
 
@@ -102,13 +111,17 @@ Claude, Notes, Calendar, Reminders, YouTube, Gmail… → **⌘⇧R** → Accept
 ./scripts/build-mac-app.sh
 ```
 
+**Download (Apple Silicon):** [Residence-mac.zip](https://github.com/Aditya-Sarna/residencehackathon/releases/latest/download/Residence-mac.zip)  
+(Unsigned — System Settings → Privacy & Security → Open Anyway.)
+
 Details: [`desktop/README.md`](desktop/README.md).
 
 ## Deploy
 
-- **Judging:** local DataHub + Core + `shell` (`/api` → `:8700`).
-- **Mac:** download `desktop/dist` zip / `Residence.app` (unsigned — Open Anyway once).
-- **Vercel:** static `shell/dist` only — Core stays local.
+- **Judging (live):** local DataHub + Core + `shell` (`/api` → `:8700`).
+- **Judging (hosted):** Vercel shell at `/?judge&auto=1` — offline replay of the winning path if Core is down.
+- **Mac:** GitHub Release zip (not in git history).
+- **Film:** `samples/join/residence-seamless-joined.mp4` + `shell/public/video/residence.mp4`.
 
 ## License
 

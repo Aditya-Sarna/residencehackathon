@@ -21,10 +21,14 @@ export default function Landing() {
   const [videoMuted, setVideoMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const downloadUrl = useMemo(
-    () => `${window.location.origin}/mac/Residence-mac.zip`,
-    []
-  );
+  const downloadUrl = useMemo(() => {
+    // Prefer GitHub Release (keeps the zip out of git); fall back to bundled public copy.
+    const release =
+      "https://github.com/Aditya-Sarna/residencehackathon/releases/latest/download/Residence-mac.zip";
+    return import.meta.env.DEV
+      ? `${window.location.origin}/mac/Residence-mac.zip`
+      : release;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

@@ -21,9 +21,22 @@ jobs:
           RESIDENCE_REQUIRE_AUTH: "0"
           DATAHUB_GMS_URL: http://localhost:8080
         run: |
-          PYTHONPATH=core pytest tests/test_production.py tests/test_cross_reason.py \
-            tests/test_memory_inference.py tests/test_desktop_bridge.py \
-            tests/test_inference.py -q
+          PYTHONPATH=core pytest \
+            tests/test_production.py \
+            tests/test_cross_reason.py \
+            tests/test_memory_inference.py \
+            tests/test_desktop_bridge.py \
+            tests/test_inference.py \
+            tests/test_chat_recall.py \
+            tests/test_broker.py \
+            tests/test_nlu_production.py \
+            tests/test_smart_memory_coverage.py \
+            -q
+      - name: Shell typecheck + build
+        run: |
+          cd shell
+          npm ci || npm install
+          npm run build
       - name: Config fail-closed
         run: |
           python - <<'PY'

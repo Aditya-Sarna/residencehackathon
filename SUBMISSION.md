@@ -19,7 +19,9 @@ Spoken script + anti-patterns: **[`WIN.md`](WIN.md)**
 4. Say: *“Apps stopped lying because Facts live in DataHub — glossary, ownership, lineage, and sensitivity.”*  
 5. Optional encore: **Smart memory** (same-day clash)  
 
-Fallback: Space bar re-fires the 30s demo. Offline proof: `pytest tests/test_judge_demo.py -q`
+Fallback: Space bar re-fires the 30s demo.  
+Hosted / Core-down: shell plays the **offline replay** of the same winning path (toast says Replay).  
+Live GMS proof: `pytest tests/test_judge_demo.py -q`
 
 ## DataHub tier
 
