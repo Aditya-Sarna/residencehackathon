@@ -16,7 +16,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from models import CertificationStatus, SensitivityTag
@@ -137,6 +137,7 @@ class Slots:
     money: list[float] = field(default_factory=list)
     day_of_month: Optional[int] = None
     month: Optional[int] = None
+    weekday: Optional[int] = None  # Mon=0 … Sun=6
     time_hhmm: Optional[str] = None
     relative_when: Optional[str] = None  # today / tomorrow / tonight / morning
     person: Optional[str] = None
@@ -166,10 +167,147 @@ class Intent:
     fact_value: Optional[dict[str, Any]] = None
 
 
+_WEEKDAYS = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+    "mon": 0,
+    "tue": 1,
+    "tues": 1,
+    "wed": 2,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "fri": 4,
+    "sat": 5,
+    "sun": 6,
+}
+
+
 def _normalize(text: str) -> str:
     t = text.strip()
     t = re.sub(r"\s+", " ", t)
     return t
+
+
+def _next_weekday(target: int, *, today: Optional[date] = None) -> date:
+    """Next occurrence of weekday (Mon=0). If today matches, use today."""
+    base = today or date.today()
+    delta = (target - base.weekday()) % 7
+    return base + timedelta(days=delta)
+
+
+def _month_last_day(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    return (date(year, month + 1, 1) - timedelta(days=1)).day
+
+
+def _next_day_of_month(day: int, *, month: Optional[int] = None, today: Optional[date] = None) -> date:
+    """Next calendar date for day-of-month (optionally named month). Past days roll forward."""
+    base = today or date.today()
+    d = max(1, min(31, int(day)))
+    if month is not None:
+        y = base.year
+        m = int(month)
+        for _ in range(3):
+            cand = date(y, m, min(d, _month_last_day(y, m)))
+            if cand >= base:
+                return cand
+            y += 1
+        return date(y, m, min(d, _month_last_day(y, m)))
+    y, m = base.year, base.month
+    for _ in range(14):
+        cand = date(y, m, min(d, _month_last_day(y, m)))
+        if cand >= base:
+            return cand
+        if m == 12:
+            m = 1
+            y += 1
+        else:
+            m += 1
+    return base
+
+
+def resolve_calendar_when(
+    *,
+    day_of_month: Optional[int] = None,
+    month: Optional[int] = None,
+    relative_when: Optional[str] = None,
+    weekday: Optional[int] = None,
+    time_hhmm: Optional[str] = None,
+    today: Optional[date] = None,
+) -> dict[str, Any]:
+    """Resolve natural-language date slots → dateISO, startHhmm, dayOfMonth, whenLabel."""
+    base = today or date.today()
+    resolved: Optional[date] = None
+    rel = (relative_when or "").lower().strip()
+
+    if rel in ("today", "tonight", "this morning", "this afternoon", "this evening"):
+        resolved = base
+    elif rel == "tomorrow":
+        resolved = base + timedelta(days=1)
+    elif rel == "this weekend":
+        # Upcoming Saturday
+        resolved = _next_weekday(5, today=base)
+    elif rel == "next week":
+        resolved = base + timedelta(days=7)
+    elif weekday is not None:
+        resolved = _next_weekday(int(weekday), today=base)
+    elif day_of_month is not None:
+        resolved = _next_day_of_month(int(day_of_month), month=month, today=base)
+    elif month is not None:
+        resolved = _next_day_of_month(base.day, month=month, today=base)
+
+    start = time_hhmm
+    if not start and rel == "tonight":
+        start = "20:00"
+    elif not start and rel == "this morning":
+        start = "09:00"
+    elif not start and rel == "this afternoon":
+        start = "15:00"
+    elif not start and rel == "this evening":
+        start = "18:00"
+
+    if resolved is None:
+        label_bits = []
+        if start:
+            label_bits.append(start)
+        return {
+            "dateISO": None,
+            "dayOfMonth": day_of_month,
+            "startHhmm": start,
+            "time": start,
+            "whenLabel": " · ".join(label_bits) if label_bits else "No date yet",
+        }
+
+    # Human label
+    try:
+        when_label = resolved.strftime("%a %b %-d")
+    except ValueError:
+        when_label = resolved.strftime("%a %b %d").replace(" 0", " ")
+    if start:
+        try:
+            h, mi = [int(x) for x in start.split(":")]
+            suffix = "AM" if h < 12 else "PM"
+            h12 = h % 12 or 12
+            when_label = f"{when_label} · {h12}:{mi:02d} {suffix}"
+        except Exception:
+            when_label = f"{when_label} · {start}"
+    else:
+        when_label = f"{when_label} · 10:00 AM (default)"
+
+    return {
+        "dateISO": resolved.isoformat(),
+        "dayOfMonth": resolved.day,
+        "startHhmm": start,
+        "time": start,
+        "whenLabel": when_label,
+    }
 
 
 def extract_slots(text: str) -> Slots:
@@ -201,12 +339,18 @@ def extract_slots(text: str) -> Slots:
         )
     )
 
-    # Day of month: 15th, day 15, on the 15
-    m = re.search(r"\b(?:on\s+the\s+|day\s+)?(\d{1,2})(st|nd|rd|th)?\b", lower)
+    # Day of month — prefer explicit "on the 15th" / "day 15" before bare digits (avoid stealing from times/prices)
+    m = re.search(r"\b(?:on\s+the|day)\s+(\d{1,2})(st|nd|rd|th)?\b", lower)
     if m:
         d = int(m.group(1))
         if 1 <= d <= 31:
             slots.day_of_month = d
+    if slots.day_of_month is None:
+        m = re.search(r"\b(\d{1,2})(st|nd|rd|th)\b", lower)
+        if m:
+            d = int(m.group(1))
+            if 1 <= d <= 31:
+                slots.day_of_month = d
     for phrase, day in _DAY_WORDS.items():
         if phrase in lower:
             slots.day_of_month = day
@@ -215,6 +359,11 @@ def extract_slots(text: str) -> Slots:
     for name, num in _MONTHS.items():
         if re.search(rf"\b{name}\b", lower):
             slots.month = num
+            break
+
+    for name, num in _WEEKDAYS.items():
+        if re.search(rf"\b(?:on\s+)?{name}\b", lower):
+            slots.weekday = num
             break
 
     # Clock / time
@@ -367,37 +516,45 @@ def _score_intents(slots: Slots, live_budget: Optional[float]) -> list[Intent]:
         else:
             title_bits.append(slots.raw[:48])
         label = title_bits[0]
-        day = slots.day_of_month
-        if day is None and slots.relative_when in ("tomorrow", "tonight", "this evening"):
-            from datetime import date as _date, timedelta as _td
-
-            day = (_date.today() + _td(days=1 if slots.relative_when == "tomorrow" else 0)).day
-        body = label
-        if day:
-            body = f"{label} — day {day}"
+        when_info = resolve_calendar_when(
+            day_of_month=slots.day_of_month,
+            month=slots.month,
+            relative_when=slots.relative_when,
+            weekday=slots.weekday,
+            time_hhmm=slots.time_hhmm,
+        )
+        body = f"{label} — {when_info['whenLabel']}"
+        cal_payload = {
+            "title": label,
+            "dayOfMonth": when_info["dayOfMonth"],
+            "dateISO": when_info["dateISO"],
+            "startHhmm": when_info["startHhmm"],
+            "time": when_info["time"],
+            "when": slots.relative_when,
+            "whenLabel": when_info["whenLabel"],
+            "person": slots.person,
+            "occasion": slots.occasion,
+        }
         intents.append(
             Intent(
                 type="calendar.commitment",
                 confidence=min(0.98, cal_score),
                 target_app="calendar",
-                title="Convert this into a note?",
+                title="Add to Calendar?",
                 body=body,
-                payload={
-                    "title": label,
-                    "dayOfMonth": day,
-                    "person": slots.person,
-                    "occasion": slots.occasion,
-                    "when": slots.relative_when,
-                },
+                payload=cal_payload,
                 glossary_term="Commitment",
                 should_persist=True,
                 fact_value={
                     "title": label,
-                    "dayOfMonth": day,
+                    "dayOfMonth": when_info["dayOfMonth"],
+                    "dateISO": when_info["dateISO"],
+                    "startHhmm": when_info["startHhmm"],
                     "person": slots.person,
                     "occasion": slots.occasion,
                     "sourceText": slots.raw,
                     "when": slots.relative_when,
+                    "whenLabel": when_info["whenLabel"],
                 },
             )
         )
@@ -411,20 +568,30 @@ def _score_intents(slots: Slots, live_budget: Optional[float]) -> list[Intent]:
     if slots.relative_when in ("tonight", "this morning", "this evening", "this afternoon"):
         clock_score += 0.2
     if clock_score >= 0.4:
-        when = slots.time_hhmm or slots.relative_when or "later"
+        when_info = resolve_calendar_when(
+            day_of_month=slots.day_of_month,
+            month=slots.month,
+            relative_when=slots.relative_when or "today",
+            weekday=slots.weekday,
+            time_hhmm=slots.time_hhmm,
+        )
+        when = when_info["whenLabel"] or slots.time_hhmm or slots.relative_when or "later"
         intents.append(
             Intent(
                 type="calendar.reminder",
                 confidence=min(0.97, clock_score),
                 target_app="calendar",
-                title="Put this on Calendar?",
-                body=f"I heard {when}"
-                + (f" — {slots.raw[:60]}" if len(slots.raw) < 80 else ""),
+                title="Add to Calendar?",
+                body=f"{slots.raw[:60]}" if len(slots.raw) < 80 else f"Reminder — {when}",
                 payload={
-                    "time": slots.time_hhmm,
-                    "when": slots.relative_when,
-                    "text": slots.raw,
                     "title": slots.raw[:48],
+                    "text": slots.raw,
+                    "dayOfMonth": when_info["dayOfMonth"],
+                    "dateISO": when_info["dateISO"],
+                    "startHhmm": when_info["startHhmm"],
+                    "time": when_info["time"],
+                    "when": slots.relative_when,
+                    "whenLabel": when_info["whenLabel"],
                 },
                 glossary_term="Commitment",
                 should_persist=False,

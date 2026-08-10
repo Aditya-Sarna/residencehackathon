@@ -276,8 +276,8 @@ function buildActionOptions(item) {
   if (item?.kind === "contradiction") {
     push({
       id: "notes",
-      label: "Update Notes",
-      hint: "Keep the incoming version in Apple Notes",
+      label: "Notes",
+      hint: "Keep the new version",
       destination: "notes",
       primary: true,
     });
@@ -285,15 +285,15 @@ function buildActionOptions(item) {
   if (item?.kind === "related_chats" || q === "related_chats") {
     push({
       id: "notes",
-      label: "Save summary to Notes",
-      hint: "Related Claude/GPT chats digest",
+      label: "Notes",
+      hint: "Save the chat summary",
       destination: "notes",
       primary: true,
     });
     push({
       id: "reminders",
-      label: "Save to Reminders",
-      hint: "Keep the digest as a reminder",
+      label: "Reminders",
+      hint: "Keep as a reminder",
       destination: "reminders",
       primary: false,
     });
@@ -327,22 +327,22 @@ function buildActionOptions(item) {
   if (looksCalendar) {
     push({
       id: "calendar",
-      label: "Save to Calendar",
-      hint: "Create an Apple Calendar event",
+      label: "Calendar",
+      hint: "Add an event",
       destination: "calendar",
       primary: app === "calendar" || (!looksReminder && !looksNotes),
     });
   }
   if (looksReminder) {
-    let label = "Save to Reminders";
-    if (q === "youtube") label = "Watch later";
-    else if (q === "shopping" || app === "shop") label = "Add to shopping list";
-    else if (q === "github") label = "Remind to review";
-    else if (q === "read-later") label = "Read later";
+    let hint = "Add a reminder";
+    if (q === "youtube") hint = "Watch later";
+    else if (q === "shopping" || app === "shop") hint = "Shopping list";
+    else if (q === "github") hint = "Review later";
+    else if (q === "read-later") hint = "Read later";
     push({
       id: "reminders",
-      label,
-      hint: "Create an Apple Reminder",
+      label: "Reminders",
+      hint,
       destination: "reminders",
       primary: app !== "calendar" && app !== "wellness" && app !== "notes",
     });
@@ -350,8 +350,8 @@ function buildActionOptions(item) {
   if (looksNotes) {
     push({
       id: "notes",
-      label: "Save to Notes",
-      hint: "Create an Apple Note",
+      label: "Notes",
+      hint: "Save a note",
       destination: "notes",
       primary: app === "wellness" || app === "notes",
     });
@@ -360,22 +360,22 @@ function buildActionOptions(item) {
   // Always offer the three destinations so the user can override inference.
   push({
     id: "calendar",
-    label: "Save to Calendar",
-    hint: "Create an Apple Calendar event",
+    label: "Calendar",
+    hint: "Add an event",
     destination: "calendar",
     primary: false,
   });
   push({
     id: "notes",
-    label: "Save to Notes",
-    hint: "Create an Apple Note",
+    label: "Notes",
+    hint: "Save a note",
     destination: "notes",
     primary: false,
   });
   push({
     id: "reminders",
-    label: "Save to Reminders",
-    hint: "Create an Apple Reminder",
+    label: "Reminders",
+    hint: "Add a reminder",
     destination: "reminders",
     primary: false,
   });
@@ -394,15 +394,33 @@ function decoratePermission(item, index = 0, total = 1) {
   const policy = writePolicyForItem(item);
   const options = buildActionOptions(item);
   const primary = options.find((o) => o.primary) || options[0];
+  const payload = { ...(item.payload || {}) };
+  let whenLabel = payload.whenLabel || "";
+  const dest = primary?.destination || "notes";
+  if (!whenLabel && (dest === "calendar" || item.actionApp === "calendar")) {
+    try {
+      whenLabel = mac.resolveEventSchedule(payload).label;
+    } catch {
+      whenLabel = "";
+    }
+  }
+  const summary =
+    payload.summary ||
+    mac.summarizeContent(
+      item.utterance || payload.text || payload.incoming || payload.note || item.body || ""
+    );
   return {
     ...item,
+    payload: { ...payload, whenLabel, summary },
     queueIndex: index,
     queueTotal: total,
     writePolicy: policy,
     needsWriteConfirm: false,
     writeTargets: writeTargetsForItem(item),
     actionOptions: options,
-    primaryDestination: primary?.destination || "notes",
+    primaryDestination: dest,
+    whenLabel,
+    summary,
   };
 }
 
@@ -908,7 +926,7 @@ function openPermission(item) {
   }
   permissionWin = new BrowserWindow({
     width: 480,
-    height: item?.kind === "contradiction" ? 620 : 560,
+    height: item?.kind === "contradiction" ? 680 : 620,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -1007,15 +1025,16 @@ async function deliverCapture(row, openReview = true) {
 
 function showDecisionNotification(item, relatedCount = 1) {
   const primary = (item.actionOptions || []).find((o) => o.primary) || (item.actionOptions || [])[0];
+  const when = item.whenLabel ? ` · ${item.whenLabel}` : "";
   showNote(
-    item.title || "Residence",
-    `${item.body || "Choose where to save"}${
-      relatedCount > 1 ? ` · +${relatedCount - 1} related` : ""
+    item.title || "Save this?",
+    `${item.body || item.summary || "Ready to save"}${when}${
+      relatedCount > 1 ? ` · +${relatedCount - 1} more` : ""
     }`,
     {
       actions: [
-        { type: "button", text: primary?.label || "Choose…" },
-        { type: "button", text: "Dismiss" },
+        { type: "button", text: primary ? `Save to ${primary.label}` : "Save" },
+        { type: "button", text: "Not now" },
       ],
       onClick: () => openPermission(item),
       onAction: async (_e, index) => {
@@ -1422,8 +1441,15 @@ function openFirstRun() {
   });
 }
 
-function shapeWritePayload(item, writeMode, destination) {
+function shapeWritePayload(item, writeMode, destination, extra = {}) {
   const payload = { ...(item.payload || {}) };
+  payload.source = payload.source || item.source || "";
+  payload.captureMethod = payload.captureMethod || item.captureMethod || "";
+  payload.summary =
+    payload.summary ||
+    item.summary ||
+    mac.summarizeContent(item.utterance || payload.text || payload.note || item.body || "");
+  if (extra.personalNote) payload.personalNote = String(extra.personalNote).trim();
   const dest = String(destination || writeMode || "").toLowerCase();
   if (dest === "facts-only" || writeMode === "facts-only") {
     return { actionApp: item.actionApp, payload, skip: true, destination: "facts-only" };
@@ -1474,6 +1500,7 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
           : writeMode === "notes"
             ? "notes"
             : null);
+  const personalNote = opts.personalNote || "";
   const resolveBody = { id, accept };
   if (accept && destination && destination !== "full") {
     resolveBody.destination = destination;
@@ -1483,7 +1510,7 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
     const detail =
       (typeof json.detail === "string" && json.detail) ||
       json.error ||
-      (status === 429 ? "rate_limited — Core busy, retry Accept" : "resolve failed");
+      (status === 429 ? "rate_limited — Core busy, retry Save" : "save failed");
     fileLog(`resolve failed status=${status} detail=${detail}`);
     throw new Error(detail);
   }
@@ -1508,7 +1535,7 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
   let writeMsg = "";
   const settings = loadSettings();
   const policy = writePolicyForItem(item);
-  const shaped = shapeWritePayload(item || {}, writeMode, destination);
+  const shaped = shapeWritePayload(item || {}, writeMode, destination, { personalNote });
   const canWrite =
     accept &&
     settings.writeBack !== false &&
@@ -1523,7 +1550,12 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
       shaped.payload || item.payload || {},
       item.utterance || "",
       item.operationId || id,
-      { destination: shaped.destination || destination }
+      {
+        destination: shaped.destination || destination,
+        source: item.source,
+        captureMethod: item.captureMethod,
+        personalNote,
+      }
     );
     if (wb.ok && wb.writes?.length) {
       writeMsg =
@@ -1570,7 +1602,7 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
   }
 
   showCaptureHud({
-    kicker: accept ? "Accepted" : "Declined",
+    kicker: accept ? "Saved" : "Skipped",
     title: accept
       ? writeMsg
         ? "Saved & written to Mac"
@@ -1717,10 +1749,11 @@ function handleProtocolUrl(url) {
 }
 
 function registerIpc() {
-  ipcMain.handle("resolve", async (_e, { id, accept, writeMode, destination }) =>
+  ipcMain.handle("resolve", async (_e, { id, accept, writeMode, destination, personalNote }) =>
     resolvePermission(id, accept, null, {
       writeMode: writeMode || (accept ? destination || "full" : "facts-only"),
       destination: destination || null,
+      personalNote: personalNote || "",
     })
   );
 

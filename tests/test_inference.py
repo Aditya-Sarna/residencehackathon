@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "core"))
 
-from inference import CANONICAL_APPS, InferenceEngine, extract_slots
+from inference import (
+    CANONICAL_APPS,
+    InferenceEngine,
+    extract_slots,
+    resolve_calendar_when,
+)
 
 
 def test_birthday_routes_calendar_and_shop():
@@ -53,6 +59,39 @@ def test_time_routes_calendar():
     assert "calendar" in apps
     assert "clock" not in apps
     assert out["slots"]["time"] == "19:00"
+
+
+def test_resolve_calendar_when_tomorrow_and_time():
+    info = resolve_calendar_when(
+        relative_when="tomorrow",
+        time_hhmm="15:00",
+        today=date(2026, 8, 10),
+    )
+    assert info["dateISO"] == "2026-08-11"
+    assert info["startHhmm"] == "15:00"
+    assert "3:00" in info["whenLabel"] or "15:00" in info["whenLabel"]
+
+
+def test_resolve_calendar_when_weekday():
+    # 2026-08-10 is Monday → next Friday is 2026-08-14
+    info = resolve_calendar_when(weekday=4, today=date(2026, 8, 10))
+    assert info["dateISO"] == "2026-08-14"
+
+
+def test_commitment_payload_has_date_fields():
+    eng = InferenceEngine(broker=None)
+    out = eng.infer(
+        "meeting tomorrow at 3pm",
+        source_app="voice",
+        persist=False,
+        use_llm=False,
+    )
+    cal = [i for i in out["intents"] if i["target_app"] == "calendar"]
+    assert cal
+    payload = cal[0]["payload"]
+    assert payload.get("dateISO")
+    assert payload.get("startHhmm") in ("15:00", "3:00") or payload.get("startHhmm") == "15:00"
+    assert cal[0]["title"] == "Add to Calendar?"
 
 
 def test_allergy_routes_wellness():

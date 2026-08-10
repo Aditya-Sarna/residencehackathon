@@ -6,6 +6,12 @@ const { execFile, spawn } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 const web = require("./web_apps");
+const {
+  nextValidOccurrence,
+  resolveEventSchedule,
+  formatWriteBody,
+  summarizeContent,
+} = require("./schedule");
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -552,51 +558,42 @@ function residenceMarker(operationId) {
   return `[Residence operation:${operationId}]`;
 }
 
-function nextValidOccurrence(dayOfMonth) {
-  const now = new Date();
-  const requested = Math.max(1, Math.min(31, Number(dayOfMonth) || now.getDate()));
-  let year = now.getFullYear();
-  let month = now.getMonth();
-  const make = () => new Date(year, month, Math.min(requested, new Date(year, month + 1, 0).getDate()), 10, 0, 0);
-  let out = make();
-  if (out <= now) {
-    month += 1;
-    if (month > 11) {
-      month = 0;
-      year += 1;
-    }
-    out = make();
-  }
-  return { year: out.getFullYear(), month: out.getMonth() + 1, day: out.getDate() };
-}
-
-async function createCalendarEvent({ title, dayOfMonth, dateISO, startHhmm, notes, operationId }) {
+async function createCalendarEvent({
+  title,
+  dayOfMonth,
+  dateISO,
+  startHhmm,
+  time,
+  when,
+  whenLabel,
+  notes,
+  operationId,
+}) {
   const summary = appleString(title || "Residence", 120);
   const marker = residenceMarker(operationId || "unknown");
-  const body = appleString(`${notes || ""}\n${marker}`, 1000);
-  let year;
-  let month;
-  let day;
-  let hours = 10;
-  let minutes = 0;
-  if (dateISO && /^\d{4}-\d{2}-\d{2}$/.test(String(dateISO))) {
-    const [y, m, d] = String(dateISO).split("-").map(Number);
-    year = y;
-    month = m;
-    day = d;
-  } else {
-    const occurrence = nextValidOccurrence(dayOfMonth);
-    year = occurrence.year;
-    month = occurrence.month;
-    day = occurrence.day;
-  }
-  if (startHhmm && /^\d{1,2}:\d{2}$/.test(String(startHhmm))) {
-    const [h, mi] = String(startHhmm).split(":").map(Number);
-    hours = h;
-    minutes = mi;
-  }
+  const schedule = resolveEventSchedule({
+    dateISO,
+    dayOfMonth,
+    startHhmm,
+    time,
+    when,
+    whenLabel,
+  });
+  const [year, month, day] = schedule.dateISO.split("-").map(Number);
+  const [hours, minutes] = schedule.startHhmm.split(":").map(Number);
+  const body = appleString(
+    `${notes || `When: ${schedule.label}`}\n${marker}`,
+    1000
+  );
+  // Build from a fixed epoch base so month/day mutation cannot roll incorrectly.
   await osascript([
     "set startDate to current date",
+    "set year of startDate to 2000",
+    "set month of startDate to 1",
+    "set day of startDate to 1",
+    "set hours of startDate to 0",
+    "set minutes of startDate to 0",
+    "set seconds of startDate to 0",
     `set year of startDate to ${year}`,
     `set month of startDate to ${month}`,
     `set day of startDate to ${day}`,
@@ -612,7 +609,7 @@ async function createCalendarEvent({ title, dayOfMonth, dateISO, startHhmm, note
     "  end tell",
     "end tell",
   ]);
-  return { ok: true, app: "Calendar" };
+  return { ok: true, app: "Calendar", schedule };
 }
 
 async function createOrAppendNote({ title, body, operationId }) {
@@ -678,7 +675,27 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
   const dest = String(opts.destination || "").toLowerCase();
   const title =
     p.title || p.text || (ut ? ut.slice(0, 80) : "") || "Residence";
-  const body = p.note || p.incoming || p.text || ut || "";
+  const content = p.note || p.incoming || p.text || ut || "";
+  const richBody = formatWriteBody({
+    source: p.source || opts.source || "",
+    captureMethod: p.captureMethod || opts.captureMethod || "",
+    utterance: ut,
+    summary: p.summary || summarizeContent(content || title),
+    personalNote: p.personalNote || opts.personalNote || "",
+    content,
+    title,
+  });
+  const calArgs = {
+    title: title.slice(0, 120) || "Residence event",
+    dayOfMonth: p.dayOfMonth || p.day,
+    dateISO: p.dateISO,
+    startHhmm: p.startHhmm || p.time,
+    time: p.time,
+    when: p.when,
+    whenLabel: p.whenLabel,
+    notes: richBody,
+    operationId,
+  };
 
   // Explicit one-tap destinations from the choice sheet — skip specialty routing.
   if (dest === "notes") {
@@ -686,7 +703,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createOrAppendNote({
           title: title.slice(0, 80) || "Residence · Note",
-          body,
+          body: richBody,
           operationId,
         })
       );
@@ -697,16 +714,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
   }
   if (dest === "calendar") {
     try {
-      writes.push(
-        await createCalendarEvent({
-          title: title.slice(0, 120) || "Residence event",
-          dayOfMonth: p.dayOfMonth || p.day,
-          dateISO: p.dateISO,
-          startHhmm: p.startHhmm,
-          notes: body,
-          operationId,
-        })
-      );
+      writes.push(await createCalendarEvent(calArgs));
       return { ok: true, writes };
     } catch (e) {
       return { ok: false, error: String(e.message || e), writes };
@@ -714,10 +722,11 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
   }
   if (dest === "reminders") {
     try {
+      const remBody = [urlMatch && urlMatch[0], richBody].filter(Boolean).join("\n");
       writes.push(
         await createReminder({
           title: title.slice(0, 120) || "Residence reminder",
-          body: [urlMatch && urlMatch[0], body].filter(Boolean).join("\n").slice(0, 400),
+          body: remBody.slice(0, 1800),
           operationId,
         })
       );
@@ -741,13 +750,11 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
           operationId,
         })
       );
-      if (actionApp === "calendar" && p.dayOfMonth) {
+      if (actionApp === "calendar" && (p.dayOfMonth || p.dateISO || p.when)) {
         writes.push(
           await createCalendarEvent({
+            ...calArgs,
             title: p.title || "Watch",
-            dayOfMonth: p.dayOfMonth,
-            notes: ut,
-            operationId,
           })
         );
       }
@@ -763,7 +770,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.who ? `Gift for ${p.who}` : p.title || p.q || "Shopping list",
-          body: [urlMatch && urlMatch[0], p.title, utterance].filter(Boolean).join(" — ").slice(0, 400),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -771,7 +778,15 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
         writes.push(
           await createOrAppendNote({
             title: "Residence · Allergy check",
-            body: p.note || `Check for ${p.allergen || "allergens"} before: ${ut.slice(0, 160)}`,
+            body: formatWriteBody({
+              source: p.source,
+              captureMethod: p.captureMethod,
+              utterance: ut,
+              summary: `Check for ${p.allergen || "allergens"} before buying`,
+              personalNote: p.personalNote,
+              content: p.note || content,
+              title: "Allergy check",
+            }),
             operationId,
           })
         );
@@ -780,7 +795,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
         writes.push(
           await createReminder({
             title: `Budget $${p.ceilingWeeklyUsd || ""}`.trim(),
-            body: utterance || "Shopping vs budget",
+            body: richBody.slice(0, 1800),
             operationId,
           })
         );
@@ -793,14 +808,14 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createOrAppendNote({
           title: p.title || "Saved place",
-          body: [urlMatch && urlMatch[0], utterance].filter(Boolean).join("\n"),
+          body: richBody,
           operationId,
         })
       );
       writes.push(
         await createReminder({
           title: p.title || "Visit place",
-          body: urlMatch ? urlMatch[0] : ut.slice(0, 200),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -809,20 +824,18 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
 
     // LinkedIn / networking follow-up
     if (p.q === "linkedin" || /linkedin\.com|follow-up|networking note/i.test(ut)) {
-      if (actionApp === "calendar" && p.dayOfMonth) {
+      if (actionApp === "calendar") {
         writes.push(
           await createCalendarEvent({
+            ...calArgs,
             title: p.title || "Networking follow-up",
-            dayOfMonth: p.dayOfMonth,
-            notes: ut,
-            operationId,
           })
         );
       }
       writes.push(
         await createReminder({
           title: p.title || "LinkedIn follow-up",
-          body: [urlMatch && urlMatch[0], utterance].filter(Boolean).join("\n").slice(0, 400),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -867,20 +880,18 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
 
     // Rideshare clash → calendar note + remind to leave
     if (p.q === "rideshare" || /uber\.com|lyft\.com|ride conflict/i.test(ut)) {
-      if (p.dayOfMonth || actionApp === "calendar") {
+      if (p.dayOfMonth || p.dateISO || actionApp === "calendar") {
         writes.push(
           await createCalendarEvent({
+            ...calArgs,
             title: p.title || "Ride",
-            dayOfMonth: p.dayOfMonth || new Date().getDate(),
-            notes: ut,
-            operationId,
           })
         );
       }
       writes.push(
         await createReminder({
           title: "Leave for ride",
-          body: ut.slice(0, 200),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -888,16 +899,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
     }
 
     if (actionApp === "calendar") {
-      writes.push(
-        await createCalendarEvent({
-          title: p.title || p.text || utterance || "Residence event",
-          dayOfMonth: p.dayOfMonth || p.day,
-          dateISO: p.dateISO,
-          startHhmm: p.startHhmm,
-          notes: utterance || p.text || "",
-          operationId,
-        })
-      );
+      writes.push(await createCalendarEvent(calArgs));
       // Same-day conflict Accept with needsTime → also remind to pick a time
       if (p.needsTime === true || p.needsTime === "true") {
         writes.push(
@@ -915,7 +917,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createOrAppendNote({
           title: actionApp === "notes" ? "Residence · Note" : "Residence · Wellness",
-          body: p.note || p.incoming || p.text || utterance || "",
+          body: richBody,
           operationId,
         })
       );
@@ -924,7 +926,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: `Budget $${p.ceilingWeeklyUsd || ""}`.trim(),
-          body: utterance || "Updated from Residence",
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -933,7 +935,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.who ? `Gift for ${p.who}` : p.q || "Shop from Residence",
-          body: [p.title, utterance].filter(Boolean).join(" — "),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -1112,5 +1114,9 @@ module.exports = {
   createOrAppendNote,
   createReminder,
   listCalendarEvents,
+  resolveEventSchedule,
+  formatWriteBody,
+  summarizeContent,
+  nextValidOccurrence,
   INTEGRATIONS,
 };

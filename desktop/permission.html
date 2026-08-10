@@ -9,14 +9,16 @@
   <body>
     <main>
       <div class="top">
-        <p class="brand">RESIDENCE · choose app · accept / decline</p>
+        <p class="brand">Residence</p>
         <p class="queue" id="queue" hidden></p>
       </div>
-      <h1 id="title">Add to Residence?</h1>
+      <h1 id="title">Save this?</h1>
+      <p id="when" class="when" hidden></p>
       <p id="body" class="body"></p>
       <p id="meta" class="meta"></p>
+
       <section class="context">
-        <p class="label">Captured from</p>
+        <p class="label">From</p>
         <p id="source-preview" class="preview">—</p>
         <div id="diff" class="diff" hidden>
           <div>
@@ -29,18 +31,23 @@
           </div>
         </div>
         <p class="label">Why</p>
-        <p id="why" class="preview">Pick where to save, then Accept or Decline.</p>
+        <p id="why" class="preview">We’ll save this to your personal graph and the app you choose.</p>
       </section>
-      <p class="label section-label">Save to</p>
-      <div id="options" class="options" role="radiogroup" aria-label="Destination"></div>
-      <div class="nav" id="nav" hidden>
-        <button type="button" id="prev" class="ghost">← Prev</button>
-        <button type="button" id="next" class="ghost">Next →</button>
-        <button type="button" id="decline-rest" class="ghost">Decline rest</button>
-      </div>
+
+      <label class="note-label" for="personal-note">Your note <span>(optional)</span></label>
+      <textarea
+        id="personal-note"
+        class="personal-note"
+        rows="2"
+        placeholder="Add a personal line before it saves…"
+      ></textarea>
+
+      <button type="button" id="change-dest" class="change-dest">Change where it goes</button>
+      <div id="options" class="options" role="radiogroup" aria-label="Destination" hidden></div>
+
       <div class="actions" id="main-actions">
-        <button type="button" id="decline" class="btn-decline">Decline</button>
-        <button type="button" id="accept" class="btn-accept">Accept</button>
+        <button type="button" id="decline" class="btn-decline">Not now</button>
+        <button type="button" id="accept" class="btn-accept">Save</button>
       </div>
       <p id="err" class="err" hidden></p>
     </main>

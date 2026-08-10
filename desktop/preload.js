@@ -13,12 +13,13 @@ contextBridge.exposeInMainWorld("residence", {
   onStatus: (cb) => {
     ipcRenderer.on("status-refresh", (_e, payload) => cb(payload));
   },
-  resolve: (id, accept, writeMode, destination) =>
+  resolve: (id, accept, writeMode, destination, personalNote) =>
     ipcRenderer.invoke("resolve", {
       id,
       accept,
       writeMode,
       destination: destination || writeMode || null,
+      personalNote: personalNote || "",
     }),
   close: () => ipcRenderer.invoke("close-permission"),
   getStatus: () => ipcRenderer.invoke("get-status"),
