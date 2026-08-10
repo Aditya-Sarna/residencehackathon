@@ -15,15 +15,26 @@ core/.cache/
 *.egg-info/
 .DS_Store
 
-# Large local media / working artifacts (ship web video via shell/public)
-samples/
+# Large local media / working artifacts
+samples/**
+!samples/join/
+samples/join/**
+!samples/join/residence-seamless-joined.mp4
 assets/
 audio/
 frames/
 *.mp4
 !shell/public/video/
 !shell/public/video/**
+!samples/join/residence-seamless-joined.mp4
 text_residence_should_come_aft.mp4
 *.jpg
-!shell/public/**/*.jpg
-!desktop/assets/**/*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+!desktop/assets/
+!desktop/assets/**
+shell/public/mac/*.zip
+skills-config/*.png
+skills-config/Screenshot*
