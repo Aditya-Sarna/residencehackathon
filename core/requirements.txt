@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0
+httpx>=0.27.0
+python-dotenv>=1.0.0
+acryl-datahub[datahub-rest]>=1.0.0
+datahub-agent-context>=1.7.0
+mcp-server-datahub>=0.6.0
+pytest>=8.0.0

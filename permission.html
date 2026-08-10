@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Residence</title>
+    <link rel="stylesheet" href="permission.css" />
+  </head>
+  <body>
+    <main>
+      <div class="top">
+        <p class="brand">RESIDENCE · ⏎ accept · esc decline</p>
+        <p class="queue" id="queue" hidden></p>
+      </div>
+      <h1 id="title">Add to Notes?</h1>
+      <p id="body" class="body"></p>
+      <p id="meta" class="meta"></p>
+      <section class="context">
+        <p class="label">Captured from</p>
+        <p id="source-preview" class="preview">—</p>
+        <div id="diff" class="diff" hidden>
+          <div>
+            <p class="label">Saved</p>
+            <p id="existing" class="preview"></p>
+          </div>
+          <div>
+            <p class="label">Incoming</p>
+            <p id="incoming" class="preview"></p>
+          </div>
+        </div>
+        <p class="label">Why Residence is asking</p>
+        <p id="why" class="preview">This action needs your confirmation.</p>
+      </section>
+      <div id="chips" class="chips" hidden></div>
+      <section id="write-step" class="write-step" hidden>
+        <p class="label">Confirm Mac write-back</p>
+        <p id="write-copy" class="preview">Write into native apps?</p>
+        <div class="actions tight">
+          <button type="button" id="write-skip" class="ghost">Facts only</button>
+          <button type="button" id="write-yes" class="solid">Write to Mac</button>
+        </div>
+      </section>
+      <div class="nav" id="nav" hidden>
+        <button type="button" id="prev" class="ghost">← Prev</button>
+        <button type="button" id="next" class="ghost">Next →</button>
+        <button type="button" id="decline-rest" class="ghost">Decline rest</button>
+      </div>
+      <div class="actions" id="main-actions">
+        <button type="button" id="decline" class="ghost">Decline</button>
+        <button type="button" id="accept" class="solid">Accept</button>
+      </div>
+      <p id="err" class="err" hidden></p>
+    </main>
+    <script src="permission.js"></script>
+  </body>
+</html>

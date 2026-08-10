@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Residence capture</title>
+    <link rel="stylesheet" href="composer.css" />
+  </head>
+  <body>
+    <main>
+      <p class="brand">RESIDENCE · edit · ⌘⏎ send · esc cancel</p>
+      <h1 id="title">Send to Residence?</h1>
+      <p class="meta" id="meta">—</p>
+      <textarea id="text" rows="7" spellcheck="true"></textarea>
+      <div class="actions">
+        <button type="button" id="cancel" class="ghost">Cancel</button>
+        <button type="button" id="send" class="solid">Send</button>
+      </div>
+      <p id="err" class="err" hidden></p>
+    </main>
+    <script src="composer.js"></script>
+  </body>
+</html>

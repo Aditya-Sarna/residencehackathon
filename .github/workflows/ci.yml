@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r core/requirements.txt
+      - name: Unit + production gates
+        env:
+          RESIDENCE_ENV: development
+          RESIDENCE_REQUIRE_AUTH: "0"
+          DATAHUB_GMS_URL: http://localhost:8080
+        run: |
+          PYTHONPATH=core pytest tests/test_production.py tests/test_cross_reason.py \
+            tests/test_memory_inference.py tests/test_desktop_bridge.py \
+            tests/test_inference.py -q
+      - name: Config fail-closed
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "core")
+          os.environ["RESIDENCE_ENV"] = "production"
+          os.environ["RESIDENCE_REQUIRE_AUTH"] = "1"
+          os.environ.pop("RESIDENCE_API_KEY", None)
+          import config
+          config._settings = None
+          try:
+              config.load_settings()
+              raise SystemExit("expected RuntimeError")
+          except RuntimeError as e:
+              assert "RESIDENCE_API_KEY" in str(e)
+              print("fail-closed ok")
+          PY
+
+  desktop-pack:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build Mac zip
+        working-directory: desktop
+        run: |
+          npm ci || npm install
+          node --check main.js
+          node --check integrations/macos.js
+          npm run dist
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: residence-mac
+          path: desktop/dist/*.zip
+
+  signed-mac-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify signing credentials exist
+        env:
+          CSC_IDENTITY: ${{ secrets.CSC_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$CSC_IDENTITY"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+      - name: Build signed and notarized release
+        env:
+          CSC_IDENTITY: ${{ secrets.CSC_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release-mac.sh

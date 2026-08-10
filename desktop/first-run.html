@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Residence setup</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f0e8;
+        color: #111;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        padding: 28px;
+      }
+      .brand {
+        letter-spacing: 0.18em;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 10px 0;
+      }
+      p {
+        font-size: 14px;
+        line-height: 1.45;
+        color: #3a3834;
+      }
+      ol {
+        padding-left: 18px;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      label.habit {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13px;
+        margin: 8px 0;
+        line-height: 1.35;
+      }
+      label.habit input {
+        margin-top: 2px;
+      }
+      button {
+        margin-top: 16px;
+        border: 1px solid #111;
+        background: #111;
+        color: #f5f0e8;
+        font: inherit;
+        font-weight: 600;
+        padding: 10px 16px;
+        cursor: pointer;
+      }
+      .ghost {
+        background: transparent;
+        color: #111;
+        margin-left: 8px;
+      }
+      .ok {
+        color: #1f6b45;
+        font-weight: 600;
+      }
+      .bad {
+        color: #8b1e1e;
+        font-weight: 600;
+      }
+      .box {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border: 1px solid #d5cfc4;
+        background: rgba(255, 255, 255, 0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <p class="brand">RESIDENCE</p>
+    <h1>Make it a daily habit</h1>
+    <p id="core">Checking Core…</p>
+    <p id="permissions">Checking macOS permissions…</p>
+    <ol>
+      <li>Allow <b>Notifications</b> when prompted.</li>
+      <li>
+        System Settings → Privacy &amp; Security → <b>Accessibility</b> → enable Residence.
+      </li>
+      <li>
+        On first Accept, allow <b>Automation</b> for Notes / Calendar / Reminders / Safari.
+      </li>
+      <li>Optional: run <code>./scripts/install-launchagent.sh</code> so Core starts at login.</li>
+    </ol>
+    <div class="box">
+      <strong>Daily loop</strong>
+      <label class="habit"
+        ><input type="checkbox" id="login" checked /> Open Residence at login (menu bar)</label
+      >
+      <label class="habit"
+        ><input type="checkbox" id="quiet" checked /> Quiet hours 22:00–08:00 (briefing after)</label
+      >
+      <label class="habit"
+        ><input type="checkbox" id="briefing" checked /> Morning briefing notification</label
+      >
+      <label class="habit"
+        ><input type="checkbox" id="calendar" checked /> Import next 7 days from Apple Calendar
+        (Accept each)</label
+      >
+    </div>
+    <button type="button" id="done">Start daily loop</button>
+    <button type="button" class="ghost" id="open">Open Privacy Settings</button>
+    <script>
+      window.residence.getStatus().then((s) => {
+        const el = document.getElementById("core");
+        el.innerHTML = s.coreOk
+          ? '<span class="ok">Core connected</span> · ' + s.coreUrl
+          : '<span class="bad">Core offline</span> — run ./scripts/residence-up.sh';
+        const p = s.permissions || {};
+        const permissionEl = document.getElementById("permissions");
+        permissionEl.textContent = `Accessibility: ${p.accessibility || "unknown"} · Notifications: ${p.notifications || "unknown"} · Automation: ${p.automation || "unknown"}`;
+      });
+      document.getElementById("done").onclick = () =>
+        window.residence.finishFirstRun({
+          openAtLogin: document.getElementById("login").checked,
+          quietHours: document.getElementById("quiet").checked,
+          morningBriefing: document.getElementById("briefing").checked,
+          importCalendar: document.getElementById("calendar").checked,
+        });
+      document.getElementById("open").onclick = () => window.residence.openPrivacy();
+    </script>
+  </body>
+</html>

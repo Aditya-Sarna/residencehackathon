@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "residence": {
+      "command": "python3",
+      "args": [
+        "/ABSOLUTE/PATH/TO/residencehackathon/desktop/mcp/server.py"
+      ],
+      "env": {
+        "RESIDENCE_CORE_URL": "http://127.0.0.1:8700",
+        "RESIDENCE_API_KEY": ""
+      }
+    },
+    "datahub": {
+      "command": "bash",
+      "args": [
+        "/ABSOLUTE/PATH/TO/residencehackathon/scripts/datahub-mcp.sh",
+        "stdio"
+      ],
+      "env": {
+        "DATAHUB_GMS_URL": "http://localhost:8080",
+        "DATAHUB_GMS_TOKEN": ""
+      }
+    }
+  }
+}

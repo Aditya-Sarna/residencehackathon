@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Residence</title>
+    <link rel="stylesheet" href="permission.css" />
+  </head>
+  <body>
+    <main>
+      <div class="top">
+        <p class="brand">RESIDENCE · choose app · accept / decline</p>
+        <p class="queue" id="queue" hidden></p>
+      </div>
+      <h1 id="title">Add to Residence?</h1>
+      <p id="body" class="body"></p>
+      <p id="meta" class="meta"></p>
+      <section class="context">
+        <p class="label">Captured from</p>
+        <p id="source-preview" class="preview">—</p>
+        <div id="diff" class="diff" hidden>
+          <div>
+            <p class="label">Saved</p>
+            <p id="existing" class="preview"></p>
+          </div>
+          <div>
+            <p class="label">Incoming</p>
+            <p id="incoming" class="preview"></p>
+          </div>
+        </div>
+        <p class="label">Why</p>
+        <p id="why" class="preview">Pick where to save, then Accept or Decline.</p>
+      </section>
+      <p class="label section-label">Save to</p>
+      <div id="options" class="options" role="radiogroup" aria-label="Destination"></div>
+      <div class="nav" id="nav" hidden>
+        <button type="button" id="prev" class="ghost">← Prev</button>
+        <button type="button" id="next" class="ghost">Next →</button>
+        <button type="button" id="decline-rest" class="ghost">Decline rest</button>
+      </div>
+      <div class="actions" id="main-actions">
+        <button type="button" id="decline" class="btn-decline">Decline</button>
+        <button type="button" id="accept" class="btn-accept">Accept</button>
+      </div>
+      <p id="err" class="err" hidden></p>
+    </main>
+    <script src="permission.js"></script>
+  </body>
+</html>

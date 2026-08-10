@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RESIDENCE</title>
+  <meta name="description" content="RESIDENCE" />
+  <style>
+    :root {
+      --ink: #050505;
+      --paper: #f2efe8;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--ink);
+      overflow: hidden;
+    }
+
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100svh;
+      overflow: hidden;
+      background: var(--ink);
+    }
+
+    .stage video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center center;
+      display: block;
+      background: var(--ink);
+      transform: translate3d(0, 0, 0);
+    }
+
+    .fade {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: var(--ink);
+      animation: reveal 1.1s var(--ease) forwards;
+    }
+
+    @keyframes reveal {
+      to { opacity: 0; }
+    }
+
+    .sound {
+      position: absolute;
+      right: clamp(1rem, 2.5vw, 1.5rem);
+      bottom: clamp(1rem, 2.5vw, 1.5rem);
+      z-index: 3;
+      border: 1px solid rgba(242, 239, 232, 0.35);
+      background: rgba(5, 5, 5, 0.45);
+      color: var(--paper);
+      font: 500 0.72rem/1 system-ui, sans-serif;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 0.7rem 0.95rem;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transform: translateY(0.4rem);
+      animation: rise 0.8s var(--ease) 0.6s forwards;
+    }
+
+    .sound[hidden] {
+      display: none;
+    }
+
+    @keyframes rise {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .fade, .sound { animation: none; }
+      .fade { display: none; }
+      .sound { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <video
+      id="hero-video"
+      src="./assets/residence-b8d37b37c2.mp4"
+      autoplay
+      loop
+      playsinline
+      webkit-playsinline
+      preload="auto"
+    ></video>
+    <div class="fade" aria-hidden="true"></div>
+    <button class="sound" id="sound-btn" type="button" hidden>Enable sound</button>
+  </main>
+
+  <script>
+    const video = document.getElementById("hero-video");
+    const soundBtn = document.getElementById("sound-btn");
+
+    const playWithSound = () => {
+      video.muted = false;
+      video.volume = 1;
+      return video.play();
+    };
+
+    const playMutedFallback = () => {
+      video.muted = true;
+      video.volume = 1;
+      const p = video.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+      soundBtn.hidden = false;
+    };
+
+    const start = () => {
+      const attempt = playWithSound();
+      if (attempt && typeof attempt.catch === "function") {
+        attempt.catch(() => playMutedFallback());
+      }
+    };
+
+    soundBtn.addEventListener("click", () => {
+      playWithSound()
+        .then(() => {
+          soundBtn.hidden = true;
+        })
+        .catch(() => {});
+    });
+
+    window.addEventListener("pointerdown", () => {
+      if (video.muted || video.paused) {
+        playWithSound()
+          .then(() => {
+            soundBtn.hidden = true;
+          })
+          .catch(() => {});
+      }
+    }, { once: true });
+
+    if (video.readyState >= 2) {
+      start();
+    } else {
+      video.addEventListener("loadeddata", start, { once: true });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+services:
+  datahub-gms:
+    image: acryldata/datahub-gms:head
+    profiles: ["full"]
+    # Prefer `datahub docker quickstart` for local GMS.
+    # This profile is a placeholder hook for teams with their own GMS image.
+    ports:
+      - "8080:8080"
+
+  residence-core:
+    build: .
+    ports:
+      - "8700:8700"
+    env_file:
+      - .env
+    environment:
+      RESIDENCE_ENV: ${RESIDENCE_ENV:-production}
+      RESIDENCE_API_KEY: ${RESIDENCE_API_KEY:?set RESIDENCE_API_KEY in .env}
+      RESIDENCE_REQUIRE_AUTH: "1"
+      RESIDENCE_ALLOW_RESET: "0"
+      DATAHUB_GMS_URL: ${DATAHUB_GMS_URL:-http://host.docker.internal:8080}
+      CORE_HOST: "0.0.0.0"
+      RESIDENCE_CORS_ORIGINS: ${RESIDENCE_CORS_ORIGINS:-http://localhost:5173}
+    volumes:
+      - residence-data:/var/lib/residence
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8700/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  residence-data:

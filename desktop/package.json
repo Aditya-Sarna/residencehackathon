@@ -1,0 +1,73 @@
+{
+  "name": "residence-desktop",
+  "version": "1.0.0",
+  "description": "Residence Mac menu-bar app — capture Claude/Notes → Accept/Decline → shared Facts",
+  "main": "main.js",
+  "author": "Residence",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "pack": "env -u ELECTRON_RUN_AS_NODE electron-builder --dir",
+    "dist": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac zip",
+    "dist:dmg": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac dmg",
+    "dist:release": "bash ../scripts/release-mac.sh"
+  },
+  "build": {
+    "appId": "ai.residence.desktop",
+    "productName": "Residence",
+    "icon": "assets/Residence.icns",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["zip", "dmg"],
+      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSAppleEventsUsageDescription": "Residence writes accepted Facts into Calendar, Notes, and Reminders.",
+        "NSAppleScriptEnabled": true,
+        "NSHumanReadableCopyright": "Residence — personal context graph",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Residence",
+            "CFBundleURLSchemes": ["residence"]
+          }
+        ]
+      }
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "permission.html",
+      "permission.css",
+      "permission.js",
+      "status.html",
+      "first-run.html",
+      "hud.html",
+      "hud.css",
+      "hud.js",
+      "composer.html",
+      "composer.css",
+      "composer.js",
+      "entitlements.mac.plist",
+      "integrations/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "mcp",
+        "to": "mcp"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12"
+  }
+}

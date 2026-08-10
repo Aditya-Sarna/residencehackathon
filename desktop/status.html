@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Residence</title>
+    <style>
+      :root {
+        --bg: #f5f0e8;
+        --ink: #111;
+        --muted: #6b655c;
+        --line: #d9d2c5;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { padding: 22px 24px 28px; }
+      .brand {
+        margin: 0 0 8px;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 0 0 18px;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      button {
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid var(--ink);
+        padding: 8px 12px;
+        cursor: pointer;
+        background: var(--ink);
+        color: var(--bg);
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--ink);
+      }
+      .meta {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 0 0 14px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border-top: 1px solid var(--line);
+      }
+      li {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        align-items: start;
+      }
+      li strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      li span {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 3px;
+        line-height: 1.35;
+      }
+      .section {
+        margin: 22px 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+      .diag {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 10px 0;
+      }
+      .diag span {
+        border: 1px solid var(--line);
+        padding: 5px 7px;
+        font-size: 10px;
+      }
+      .diag .bad { border-color: var(--ink); font-weight: 700; }
+      select {
+        font: inherit;
+        font-size: 10px;
+        border: 1px solid var(--line);
+        background: transparent;
+        padding: 4px;
+      }
+      .recovery {
+        font-size: 11px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .prefs label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        margin: 0 0 8px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">RESIDENCE</p>
+      <h1>Mac agent</h1>
+      <p class="lead">
+        Menu-bar capture · one Accept writes to Mac apps · inbox · quiet hours.
+      </p>
+      <div class="row">
+        <button type="button" id="capture">Capture (⌘⇧R)</button>
+        <button type="button" class="ghost" id="inbox">Inbox (⌘⇧I)</button>
+        <button type="button" class="ghost" id="undo">Undo (⌘⇧Z)</button>
+        <button type="button" class="ghost" id="phone">Phone UI</button>
+      </div>
+      <p class="meta" id="meta">Checking…</p>
+      <div class="diag" id="diagnostics"></div>
+      <p class="section">Agent preferences</p>
+      <div class="prefs" id="prefs"></div>
+      <p class="section">Live activity</p>
+      <div id="activity"></div>
+      <p class="section">Capture and write-back policies</p>
+      <ul id="list"></ul>
+      <p class="section">Recovery</p>
+      <div id="recovery"></div>
+      <p class="meta" style="margin-top:16px">
+        residence://briefing · residence://calendar · residence://capture · residence://inbox · ⌘⇧R/C/A/D/I/Z
+      </p>
+    </main>
+    <script>
+      const list = document.getElementById("list");
+      const meta = document.getElementById("meta");
+      const diagnostics = document.getElementById("diagnostics");
+      const prefs = document.getElementById("prefs");
+      const recovery = document.getElementById("recovery");
+      const activity = document.getElementById("activity");
+
+      document.getElementById("capture").onclick = () => window.residence.captureSmart();
+      document.getElementById("inbox").onclick = () => window.residence.openInbox();
+      document.getElementById("phone").onclick = () => window.residence.openPhone();
+      document.getElementById("undo").onclick = async () => {
+        await window.residence.undoLast();
+        refresh();
+      };
+
+      function el(name, cls, text) {
+        const n = document.createElement(name);
+        if (cls) n.className = cls;
+        if (text) n.textContent = text;
+        return n;
+      }
+
+      function prefToggle(label, key, checked) {
+        const wrap = el("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = !!checked;
+        input.onchange = async () => {
+          await window.residence.setPref(key, input.checked);
+          refresh();
+        };
+        wrap.append(input, document.createTextNode(label));
+        return wrap;
+      }
+
+      async function refresh() {
+        const s = await window.residence.getStatus();
+        meta.textContent = `${s.coreOk ? "Core connected" : "Core offline"} · ${
+          s.pendingCount || 0
+        } pending · frontmost: ${s.frontmost || "—"} · ${s.coreUrl}${
+          s.quietNow ? " · quiet hours" : ""
+        }`;
+
+        diagnostics.innerHTML = "";
+        Object.entries(s.permissions || {}).forEach(([name, state]) => {
+          diagnostics.appendChild(
+            el("span", state === "needs_action" ? "bad" : "", `${name}: ${state}`)
+          );
+        });
+        if ((s.failedHotkeys || []).length) {
+          diagnostics.appendChild(
+            el("span", "bad", `hotkeys blocked: ${s.failedHotkeys.join(", ")}`)
+          );
+        }
+        if ((s.acceptStack || []).length) {
+          diagnostics.appendChild(el("span", "", `undo stack: ${s.acceptStack.length}`));
+        }
+
+        prefs.innerHTML = "";
+        prefs.append(
+          prefToggle("Edit before send", "confirmCapture", s.prefs?.confirmCapture),
+          prefToggle("Open at login", "openAtLogin", s.prefs?.openAtLogin),
+          prefToggle("Show Dock icon", "showDock", s.prefs?.showDock),
+          prefToggle("Quiet hours 22:00–08:00", "quietHours", s.prefs?.quietHours)
+        );
+
+        list.innerHTML = "";
+        (s.integrations || []).forEach((i) => {
+          const row = el("li");
+          const copy = el("div");
+          copy.append(el("strong", "", i.name));
+          copy.append(el("span", "", i.detail));
+          row.append(copy);
+          const controls = el("div");
+          const capture = document.createElement("select");
+          ["on", "off"].forEach((value) => {
+            const opt = new Option(`capture ${value}`, value);
+            opt.selected =
+              value === (s.capturePolicies?.[i.id] || (i.enabled === false ? "off" : "on"));
+            capture.add(opt);
+          });
+          capture.onchange = () =>
+            window.residence.setPolicy("capturePolicies", i.id, capture.value);
+          controls.append(capture);
+          if (i.writeBack) {
+            const write = document.createElement("select");
+            ["on", "confirm", "off"].forEach((value) => {
+              const opt = new Option(`write ${value}`, value);
+              opt.selected = value === (s.writeBackPolicies?.[i.id] || "on");
+              write.add(opt);
+            });
+            write.onchange = () =>
+              window.residence.setPolicy("writeBackPolicies", i.id, write.value);
+            controls.append(write);
+          }
+          row.append(controls);
+          list.append(row);
+        });
+
+        recovery.innerHTML = "";
+        const outbox = s.outbox || [];
+        recovery.append(
+          el(
+            "div",
+            "recovery",
+            outbox.length
+              ? `${outbox.length} capture(s) queued for delivery.`
+              : "Capture outbox clear."
+          )
+        );
+        (s.writebackRetries || []).forEach((r) => {
+          const row = el(
+            "div",
+            "recovery",
+            `Write-back pending: ${r.actionApp} · ${r.lastError || "retry needed"}`
+          );
+          const retry = el("button", "ghost", "Retry");
+          retry.onclick = async () => {
+            retry.disabled = true;
+            await window.residence.retryWriteback(r.operationId);
+            refresh();
+          };
+          row.append(document.createTextNode(" "));
+          row.append(retry);
+          recovery.append(row);
+        });
+
+        const a = await window.residence.fetchActivity();
+        activity.innerHTML = "";
+        if (!a.ok || !(a.activity || []).length) {
+          activity.append(
+            el("div", "recovery", "No desktop activity yet — capture something.")
+          );
+          return;
+        }
+        a.activity.slice(0, 8).forEach((ev) => {
+          const when = new Date((ev.at || 0) * 1000).toLocaleTimeString();
+          activity.append(
+            el(
+              "div",
+              "recovery",
+              `${when} · ${ev.event}${ev.source ? " · " + ev.source : ""}${
+                ev.preview ? " — " + ev.preview : ""
+              }`
+            )
+          );
+        });
+      }
+
+      refresh();
+      // Slow poll — was 2.5s and starved Core rate limit (Accept → Notes failed with 429)
+      setInterval(refresh, 10000);
+      window.residence.onStatus(() => refresh());
+    </script>
+  </body>
+</html>
