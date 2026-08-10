@@ -111,8 +111,8 @@ Claude, Notes, Calendar, Reminders, YouTube, Gmail… → **⌘⇧R** → Accept
 ./scripts/build-mac-app.sh
 ```
 
-**Download (Apple Silicon):** [Residence-mac.zip](https://github.com/Aditya-Sarna/residencehackathon/releases/latest/download/Residence-mac.zip)  
-(Unsigned — System Settings → Privacy & Security → Open Anyway.)
+**Download (Apple Silicon):** https://residencehackathon.vercel.app → **Download** tab  
+(or attach `shell/public/mac/Residence-mac.zip` to a GitHub Release). Unsigned — System Settings → Privacy & Security → Open Anyway.
 
 Details: [`desktop/README.md`](desktop/README.md).
 
