@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("residence", {
   fetchActivity: () => ipcRenderer.invoke("fetch-activity"),
   composerSend: (text) => ipcRenderer.invoke("composer-send", text),
   composerCancel: () => ipcRenderer.invoke("composer-cancel"),
+  openVoice: () => ipcRenderer.invoke("open-voice"),
   inboxNav: (dir) => ipcRenderer.invoke("inbox-nav", dir),
   inboxDeclineRest: () => ipcRenderer.invoke("inbox-decline-rest"),
   openInbox: () => ipcRenderer.invoke("open-inbox"),

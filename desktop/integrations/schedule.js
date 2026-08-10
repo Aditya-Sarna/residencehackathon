@@ -144,8 +144,190 @@ function summarizeContent(text, maxLen = 160) {
   return `${sentence.slice(0, maxLen - 1)}…`;
 }
 
+/** Capture helper prompts injected by web_apps.enrichCapture — not user content. */
+const CAPTURE_PROMPT_RE =
+  /^(should i |looks like |sync this |add this meeting|check budget|save this place|schedule a follow-up|remind me to review|save for focus|capture this into|save commitments or health|block focus time|turn this into a calendar|does this ride conflict|check budget and add trip|save a read-later reminder)/i;
+
+const GENRE_LABELS = {
+  messaging: { primary: "Message", link: "Link" },
+  "messaging-web": { primary: "Message", link: "Link" },
+  youtube: { primary: "Video", link: "Link" },
+  shopping: { primary: "Product", link: "Link" },
+  maps: { primary: "Place", link: "Link" },
+  meeting: { primary: "Meeting", link: "Link" },
+  "meeting-link": { primary: "Meeting", link: "Link" },
+  gmail: { primary: "Email", link: "Link" },
+  gcal: { primary: "Event", link: "Link" },
+  linkedin: { primary: "Profile / message", link: "Link" },
+  github: { primary: "Thread", link: "Link" },
+  music: { primary: "Track", link: "Link" },
+  notion: { primary: "Page", link: "Link" },
+  "ai-chat": { primary: "Chat", link: "Link" },
+  "work-tracker": { primary: "Task", link: "Link" },
+  rideshare: { primary: "Ride", link: "Link" },
+  "travel-book": { primary: "Trip", link: "Link" },
+  "read-later": { primary: "Article", link: "Link" },
+  calendar: { primary: "Commitment", link: "Link" },
+  wellness: { primary: "Note", link: "Link" },
+  browser: { primary: "Capture", link: "Link" },
+  default: { primary: "Capture", link: "Link" },
+};
+
+function extractUrl(text) {
+  const m = String(text || "").match(/https?:\/\/[^\s<>"']+/i);
+  return m ? m[0].replace(/[),.;]+$/, "") : "";
+}
+
+function detectWriteGenre({ source, q, kind, url, utterance, title } = {}) {
+  const blob = [source, q, kind, url, title, utterance].filter(Boolean).join(" ").toLowerCase();
+  if (q && GENRE_LABELS[q]) return q;
+  if (kind && GENRE_LABELS[kind]) return kind;
+  if (source && GENRE_LABELS[source]) return source;
+  if (/web\.whatsapp|telegram\.org|imessage|messages|slack\.com|discord\.com/.test(blob))
+    return "messaging";
+  if (/youtube\.com|youtu\.be/.test(blob)) return "youtube";
+  if (/amazon\.|amzn\.|shopping|ebay\.|etsy\.|walmart\.|target\./.test(blob)) return "shopping";
+  if (/maps\.google|maps\.apple|openstreetmap/.test(blob)) return "maps";
+  if (/meet\.google|zoom\.us|teams\.microsoft/.test(blob)) return "meeting";
+  if (/mail\.google|gmail/.test(blob)) return "gmail";
+  if (/calendar\.google/.test(blob)) return "gcal";
+  if (/linkedin\.com/.test(blob)) return "linkedin";
+  if (/github\.com|gitlab\.com|bitbucket\.org/.test(blob)) return "github";
+  if (/spotify\.com|music\.apple/.test(blob)) return "music";
+  if (/notion\.(so|site)/.test(blob)) return "notion";
+  if (/chatgpt\.com|claude\.ai|openai\.com/.test(blob)) return "ai-chat";
+  if (/linear\.app|atlassian\.net|asana\.com|trello\.com/.test(blob)) return "work-tracker";
+  if (/uber\.com|lyft\.com|bolt\.eu/.test(blob)) return "rideshare";
+  if (/booking\.com|airbnb\.|expedia\.|kayak\./.test(blob)) return "travel-book";
+  if (/x\.com\/|twitter\.com|reddit\.com|news\.ycombinator/.test(blob)) return "read-later";
+  if (/calendar|commitment|event/.test(blob)) return "calendar";
+  return "default";
+}
+
+/**
+ * Split a mashed capture (title / URL / selection / helper prompt) into clean parts.
+ */
+function splitCaptureParts({
+  utterance,
+  content,
+  title,
+  url,
+  selection,
+  pageTitle,
+} = {}) {
+  const raw = String(content || utterance || "").trim();
+  const lines = raw
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !/^\[Residence operation:/i.test(l));
+
+  let foundUrl = String(url || "").trim() || extractUrl(raw);
+  const cleanedLines = [];
+  for (const line of lines) {
+    const bare = line.replace(/^URL:\s*/i, "").trim();
+    if (/^https?:\/\//i.test(bare)) {
+      if (!foundUrl) foundUrl = bare.replace(/[),.;]+$/, "");
+      continue;
+    }
+    if (CAPTURE_PROMPT_RE.test(line)) continue;
+    cleanedLines.push(line);
+  }
+
+  let primary =
+    String(selection || "").trim() ||
+    String(pageTitle || "").trim() ||
+    "";
+  if (!primary && cleanedLines.length) {
+    // Prefer a non-URL line that isn't just echoing the page chrome
+    primary = cleanedLines[0];
+    if (cleanedLines.length > 1 && /^https?:\/\//i.test(primary)) {
+      primary = cleanedLines.find((l) => !/^https?:\/\//i.test(l)) || primary;
+    }
+  }
+  if (!primary) primary = String(title || "").trim();
+
+  // Drop duplicate URL-looking primary
+  if (primary && foundUrl && primary === foundUrl) primary = String(title || "").trim();
+
+  return {
+    primary: primary.replace(/\s+/g, " ").trim(),
+    url: foundUrl,
+    extras: cleanedLines.filter((l) => l !== primary && l !== foundUrl).slice(0, 4),
+  };
+}
+
+function looksLikeRawDump(candidate, parts) {
+  const c = String(candidate || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!c) return true;
+  if (/^https?:\/\//i.test(c)) return true;
+  if (parts.url && c.includes(parts.url.toLowerCase())) return true;
+  const primary = (parts.primary || "").toLowerCase();
+  if (primary && c === primary) return true;
+  if (primary && c.startsWith(primary) && c.length < primary.length + 40) return true;
+  if (CAPTURE_PROMPT_RE.test(c)) return true;
+  return false;
+}
+
+function buildInterpretation({ summary, title, payloadTitle, intentTitle, genre, parts } = {}) {
+  const candidates = [intentTitle, payloadTitle, summary, title]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+  for (const c of candidates) {
+    if (!looksLikeRawDump(c, parts)) return summarizeContent(c, 220);
+  }
+  const label = (GENRE_LABELS[genre] || GENRE_LABELS.default).primary.toLowerCase();
+  const head = parts.primary || "Captured item";
+  const genreHints = {
+    messaging: `Treat as a follow-up from this ${label}`,
+    "messaging-web": "WhatsApp / messaging thread — likely a commitment or reminder",
+    youtube: "Watch-later or schedule viewing time",
+    shopping: "Shopping candidate — check budget before buying",
+    maps: "Saved place — visit / dinner / trip candidate",
+    meeting: "Meeting link — add to calendar",
+    gmail: "Email thread — extract RSVP or follow-up",
+    calendar: "Calendar commitment",
+    github: "Code review / issue follow-up",
+    "read-later": "Read later when the day is free",
+    music: "Listen later / focus track",
+    linkedin: "Networking follow-up",
+    rideshare: "Ride — check calendar conflict",
+    "travel-book": "Travel booking — budget + trip commitment",
+  };
+  const hint = genreHints[genre] || `Residence ${label}`;
+  return summarizeContent(`${hint}: ${head}`, 220);
+}
+
+function formatWhenLine({ whenLabel, dateISO, startHhmm, savedAt } = {}, now = new Date()) {
+  if (whenLabel && String(whenLabel).trim()) return String(whenLabel).trim();
+  if (dateISO && /^\d{4}-\d{2}-\d{2}$/.test(String(dateISO))) {
+    const sched = resolveEventSchedule({ dateISO, startHhmm: startHhmm || "10:00" }, now);
+    return sched.label;
+  }
+  const d = savedAt instanceof Date ? savedAt : now;
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const hh = d.getHours();
+  const mm = pad2(d.getMinutes());
+  const suffix = hh < 12 ? "AM" : "PM";
+  const h12 = hh % 12 || 12;
+  return `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()} · ${h12}:${mm} ${suffix}`;
+}
+
 /**
  * Structured body for Notes / Reminders / Calendar description.
+ *
+ * Layout (genre-adaptive labels):
+ *   Message|Video|Product|…
+ *   <primary>
+ *   Link
+ *   <url>
+ *   AI interpretation
+ *   <clean first read>
+ *   My note
+ *   <personal note>
+ *   When|Saved
+ *   <date/time>
  */
 function formatWriteBody({
   source,
@@ -155,24 +337,99 @@ function formatWriteBody({
   personalNote,
   content,
   title,
+  intentTitle,
+  url,
+  selection,
+  pageTitle,
+  q,
+  kind,
+  whenLabel,
+  dateISO,
+  startHhmm,
+  savedAt,
+  destination,
 } = {}) {
+  const genre = detectWriteGenre({
+    source,
+    q,
+    kind,
+    url,
+    utterance: utterance || content,
+    title,
+  });
+  const labels = GENRE_LABELS[genre] || GENRE_LABELS.default;
+  const parts = splitCaptureParts({
+    utterance,
+    content,
+    title,
+    url,
+    selection,
+    pageTitle,
+  });
+  const interpretation = buildInterpretation({
+    summary,
+    title,
+    payloadTitle: title,
+    intentTitle,
+    genre,
+    parts,
+  });
+  const note = String(personalNote || "").trim();
+  const when = formatWhenLine({ whenLabel, dateISO, startHhmm, savedAt });
+  const whenHeading =
+    whenLabel || dateISO || destination === "calendar" || genre === "calendar" || genre === "meeting"
+      ? "When"
+      : "Saved";
+
+  const blocks = [];
+  if (parts.primary) {
+    blocks.push(`${labels.primary}\n${parts.primary}`);
+  }
+  if (parts.url) {
+    blocks.push(`${labels.link}\n${parts.url}`);
+  }
+  for (const extra of parts.extras) {
+    if (extra && extra !== interpretation) blocks.push(extra);
+  }
+  blocks.push(`AI interpretation\n${interpretation}`);
+  if (note) {
+    blocks.push(`My note\n${note}`);
+  }
+  blocks.push(`${whenHeading}\n${when}`);
+
   const srcBits = [source, captureMethod && String(captureMethod).replace(/-/g, " ")]
     .filter(Boolean)
     .join(" · ");
-  const raw = content || utterance || title || "";
-  const sum = summary || summarizeContent(raw);
-  const lines = [];
-  if (srcBits) lines.push(`Source: ${srcBits}`);
-  lines.push(`Summary: ${sum}`);
-  const note = String(personalNote || "").trim();
-  if (note) {
-    lines.push("---");
-    lines.push(note);
-  }
-  lines.push("---");
-  lines.push("Content:");
-  lines.push(String(raw).trim() || "(empty)");
-  return lines.join("\n");
+  if (srcBits) blocks.push(`Source\n${srcBits}`);
+
+  return blocks.join("\n\n");
+}
+
+function noteTitleForGenre({ genre, parts, title, destination } = {}) {
+  const g = genre || "default";
+  const primary = (parts && parts.primary) || "";
+  const short = summarizeContent(primary || title || "Residence", 56);
+  const prefixes = {
+    messaging: "WhatsApp",
+    "messaging-web": "WhatsApp",
+    youtube: "Watch",
+    shopping: "Shop",
+    maps: "Place",
+    meeting: "Meeting",
+    "meeting-link": "Meeting",
+    gmail: "Email",
+    github: "Code",
+    "read-later": "Read",
+    music: "Listen",
+    linkedin: "Network",
+    calendar: "Calendar",
+    rideshare: "Ride",
+    "travel-book": "Trip",
+  };
+  const prefix = prefixes[g] || (destination === "calendar" ? "Calendar" : "Residence");
+  if (!short || short === "Captured from Residence") return `${prefix}`;
+  if (short.toLowerCase().startsWith(prefix.toLowerCase())) return short;
+  return `${prefix} · ${short}`;
 }
 
 module.exports = {
@@ -180,4 +437,10 @@ module.exports = {
   resolveEventSchedule,
   summarizeContent,
   formatWriteBody,
+  detectWriteGenre,
+  splitCaptureParts,
+  extractUrl,
+  buildInterpretation,
+  formatWhenLine,
+  noteTitleForGenre,
 };

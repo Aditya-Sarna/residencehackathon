@@ -19,16 +19,25 @@
   font-style: normal;
   font-display: swap;
 }
+@font-face {
+  font-family: "Pinyon Script";
+  src: url("/fonts/PinyonScript-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --cream: #f3efe6;
   --ink: #0c0c0c;
   --muted: #6e6a62;
   --line: #0c0c0c;
-  --white: #faf8f3;
+  --white: #ffffff;
+  --home-yellow: #ffaf03;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  --script: "Pinyon Script", "Apple Chancery", "Segoe Script", cursive;
   --radius: 2px;
   font-family: var(--font);
   color: var(--ink);
@@ -52,163 +61,230 @@ body {
   background: #1a1814;
 }
 
-/* —— Central gate (download QR + demo) —— */
-.gate {
+/* —— Home gate (after film) — white plate syncing with end titles —— */
+.gate.home-gate {
   min-height: 100svh;
-  background:
-    radial-gradient(1200px 700px at 15% -10%, rgba(243, 239, 230, 0.14), transparent 55%),
-    radial-gradient(900px 500px at 90% 110%, rgba(243, 239, 230, 0.08), transparent 50%),
-    #141210;
-  color: var(--cream);
+  background: var(--white);
+  color: var(--ink);
+  animation: home-gate-in 0.7s var(--ease) both;
 }
-.gate-top {
+@keyframes home-gate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.home-gate .gate-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.25rem clamp(1rem, 3vw, 2rem);
-  border-bottom: 1px solid rgba(243, 239, 230, 0.14);
+  padding: 1.35rem clamp(1.25rem, 4vw, 2.75rem);
+  border-bottom: 1px solid rgba(12, 12, 12, 0.08);
 }
-.gate-brand {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.78rem;
-  letter-spacing: 0.28em;
+.home-gate .gate-brand {
+  font-family: var(--script);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--home-yellow);
 }
-.gate-tabs {
+.home-gate .gate-tabs {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  padding: 0.28rem;
+  border-radius: 999px;
+  background: rgba(12, 12, 12, 0.04);
+  border: 1px solid rgba(12, 12, 12, 0.08);
 }
-.gate-tabs button {
-  border: 1px solid rgba(243, 239, 230, 0.28);
+.home-gate .gate-tabs button {
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--cream);
+  color: var(--muted);
   font-family: var(--mono);
   font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 0.65rem 1rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  padding: 0.72rem 1.15rem;
   cursor: pointer;
+  transition: background 0.25s var(--ease), color 0.25s var(--ease);
 }
-.gate-tabs button.on {
-  background: var(--cream);
-  color: var(--ink);
-  border-color: var(--cream);
+.home-gate .gate-tabs button.on {
+  background: var(--ink);
+  color: var(--white);
 }
-.gate-download {
-  min-height: calc(100svh - 4.5rem);
+.home-gate .gate-download {
+  min-height: calc(100svh - 5.5rem);
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 1.05fr 0.95fr;
   gap: clamp(1.5rem, 4vw, 3.5rem);
   align-items: center;
   padding: clamp(2rem, 6vw, 4.5rem);
 }
-.gate-copy h1 {
+.home-gate .gate-kicker {
+  font-family: var(--script);
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  color: var(--home-yellow);
+  line-height: 1;
+  margin-bottom: 0.65rem;
+}
+.home-gate .gate-copy h1 {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  line-height: 1.1;
+  font-size: clamp(1.7rem, 4vw, 2.6rem);
+  line-height: 1.15;
   letter-spacing: -0.03em;
   margin-bottom: 1rem;
+  color: var(--ink);
 }
-.gate-copy p {
+.home-gate .gate-copy > p {
   font-family: var(--mono);
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: rgba(243, 239, 230, 0.78);
-  max-width: 34rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 32rem;
   margin-bottom: 1.5rem;
 }
-.gate-link {
+.home-gate .gate-link {
   display: inline-block;
   font-family: var(--mono);
   font-weight: 700;
   font-size: 0.72rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-decoration: none;
-  border: 1.5px solid var(--cream);
-  background: var(--cream);
-  color: var(--ink);
-  padding: 0.9rem 1.15rem;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--white);
+  padding: 0.9rem 1.2rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
-.gate-link:hover {
+.home-gate .gate-link:hover {
   background: transparent;
-  color: var(--cream);
+  color: var(--ink);
 }
-.gate-steps {
-  margin: 18px 0 0;
-  padding-left: 1.2em;
+.home-gate .gate-steps {
+  margin: 1.35rem 0 0;
+  padding-left: 1.15em;
   display: grid;
-  gap: 8px;
-  font-size: 0.92rem;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
   line-height: 1.45;
-  color: var(--ink-muted, #5c574e);
+  color: var(--muted);
   max-width: 28rem;
 }
-
-.gate-steps code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.86em;
+.home-gate .gate-steps code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--ink);
 }
-
-.gate-note {
-  margin-top: 1.25rem !important;
+.home-gate .gate-note {
+  margin-top: 1.1rem !important;
   font-size: 0.68rem !important;
   letter-spacing: 0.04em;
-  color: rgba(243, 239, 230, 0.55) !important;
+  color: rgba(12, 12, 12, 0.45) !important;
 }
-.gate-qr {
+.home-gate .gate-qr {
   justify-self: center;
   display: grid;
   gap: 0.85rem;
   justify-items: center;
+  animation: home-qr-in 0.8s var(--ease) 0.08s both;
 }
-.gate-qr img {
-  width: min(360px, 72vw);
+@keyframes home-qr-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.home-gate .gate-qr img {
+  width: min(320px, 70vw);
   height: auto;
-  background: var(--cream);
-  padding: 0.85rem;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  background: var(--white);
+  padding: 0.9rem;
+  border: 1px solid rgba(12, 12, 12, 0.1);
+  border-radius: 1.25rem;
 }
-.gate-qr span,
-.gate-qr-wait {
+.home-gate .gate-qr span,
+.home-gate .gate-qr-wait {
   font-family: var(--mono);
   font-size: 0.68rem;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(243, 239, 230, 0.65);
+  color: var(--muted);
 }
-.gate-qr-wait {
-  width: min(360px, 72vw);
+.home-gate .gate-qr-wait {
+  width: min(320px, 70vw);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
-  border: 1px dashed rgba(243, 239, 230, 0.3);
-}
-.gate-demo {
-  min-height: calc(100svh - 4.5rem);
-}
-.gate-demo .video-stage {
-  top: 4.5rem;
-  height: calc(100svh - 4.5rem);
-}
-.gate-demo .device-wrap {
-  min-height: calc(100svh - 4.5rem);
-  padding-top: 1.25rem;
+  border: 1px dashed rgba(12, 12, 12, 0.2);
+  border-radius: 1.25rem;
 }
 
-@media (max-width: 860px) {
-  .gate-download {
+.home-gate .gate-illustration {
+  min-height: calc(100svh - 5.5rem);
+  display: grid;
+  place-items: center;
+  padding: clamp(2rem, 6vw, 4.5rem);
+  background: var(--white);
+}
+.home-gate .gate-illu-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.25rem;
+  max-width: 32rem;
+  animation: home-gate-in 0.7s var(--ease) both;
+}
+.home-gate .gate-script {
+  font-family: var(--script);
+  font-size: clamp(2.4rem, 4.5vw, 3.6rem);
+  line-height: 1;
+  color: var(--home-yellow);
+}
+.home-gate .gate-illu-line {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 28rem;
+}
+
+@media (max-width: 900px) {
+  .home-gate .gate-download {
     grid-template-columns: 1fr;
     padding-top: 2rem;
   }
-  .gate-qr {
+  .home-gate .gate-qr {
     order: -1;
   }
-  .gate-top {
+  .home-gate .gate-top {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+  .home-gate .gate-tabs {
+    width: 100%;
+  }
+  .home-gate .gate-tabs button {
+    flex: 1;
+    text-align: center;
+    padding-inline: 0.6rem;
   }
 }
 

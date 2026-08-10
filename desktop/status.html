@@ -133,10 +133,11 @@
       <p class="brand">RESIDENCE</p>
       <h1>Mac agent</h1>
       <p class="lead">
-        Menu-bar capture · one Accept writes to Mac apps · inbox · quiet hours.
+        Speak first · Accept writes to Mac apps · inbox · quiet hours.
       </p>
       <div class="row">
-        <button type="button" id="capture">Capture (⌘⇧R)</button>
+        <button type="button" id="speak">Speak (⌘⇧M)</button>
+        <button type="button" class="ghost" id="capture">Capture (⌘⇧R)</button>
         <button type="button" class="ghost" id="inbox">Inbox (⌘⇧I)</button>
         <button type="button" class="ghost" id="undo">Undo (⌘⇧Z)</button>
         <button type="button" class="ghost" id="phone">Phone UI</button>
@@ -152,7 +153,7 @@
       <p class="section">Recovery</p>
       <div id="recovery"></div>
       <p class="meta" style="margin-top:16px">
-        residence://briefing · residence://calendar · residence://capture · residence://inbox · ⌘⇧R/C/A/D/I/Z
+        residence://voice · residence://capture · residence://inbox · ⌘⇧M speak · ⌘⇧R/C/A/D/I/Z
       </p>
     </main>
     <script>
@@ -163,6 +164,7 @@
       const recovery = document.getElementById("recovery");
       const activity = document.getElementById("activity");
 
+      document.getElementById("speak").onclick = () => window.residence.openVoice();
       document.getElementById("capture").onclick = () => window.residence.captureSmart();
       document.getElementById("inbox").onclick = () => window.residence.openInbox();
       document.getElementById("phone").onclick = () => window.residence.openPhone();

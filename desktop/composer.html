@@ -3,15 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Residence capture</title>
+    <title>Residence · speak</title>
     <link rel="stylesheet" href="composer.css" />
   </head>
   <body>
     <main>
-      <p class="brand">RESIDENCE · edit · ⌘⏎ send · esc cancel</p>
-      <h1 id="title">Send to Residence?</h1>
-      <p class="meta" id="meta">—</p>
-      <textarea id="text" rows="7" spellcheck="true"></textarea>
+      <p class="brand">RESIDENCE · speak · text stays · ⌘⏎ send</p>
+      <h1 id="title">Speak to Residence</h1>
+      <p class="meta" id="meta">Say where to save — Notes, Calendar, Reminders…</p>
+
+      <div class="voice-row">
+        <button type="button" id="mic" class="mic" aria-pressed="false" title="Toggle microphone">
+          <span class="mic-dot" aria-hidden="true"></span>
+          <span id="micLabel">Start listening</span>
+        </button>
+        <p class="voice-status" id="voiceStatus">Audio first — your words stay as text below.</p>
+      </div>
+
+      <label class="sr-only" for="text">Transcript</label>
+      <textarea
+        id="text"
+        rows="6"
+        spellcheck="true"
+        placeholder="Listening… or type here. e.g. Save dinner with Sam tomorrow at 7 to Calendar"
+      ></textarea>
+
+      <p class="hint">
+        Examples: “Save this to Notes” · “Remind me tomorrow at 9” · “Put lunch Friday on Calendar”
+      </p>
+
       <div class="actions">
         <button type="button" id="cancel" class="ghost">Cancel</button>
         <button type="button" id="send" class="solid">Send</button>

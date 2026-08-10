@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import App from "./App";
 
-type Tab = "download" | "demo";
+type Tab = "mac" | "illustration";
 
 const VIDEO_SRC = "/video/residence.mp4";
 const PARAMS = new URLSearchParams(window.location.search);
@@ -11,27 +11,29 @@ const FORCE_SHELL = PARAMS.has("judge") || PARAMS.has("smart");
 
 function initialTab(): Tab {
   const t = PARAMS.get("tab");
-  return t === "demo" ? "demo" : "download";
+  if (t === "demo" || t === "illustration") return "illustration";
+  return "mac";
 }
 
 export default function Landing() {
   const [introDone, setIntroDone] = useState(FORCE_SHELL);
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [enterHome, setEnterHome] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [videoMuted, setVideoMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const downloadUrl = useMemo(() => {
-    // Bundled copy for reliability; Release URL is documented in README for GitHub.
-    return `${window.location.origin}/mac/Residence-mac.zip`;
-  }, []);
+  const downloadUrl = useMemo(
+    () => `${window.location.origin}/mac/Residence-mac.zip`,
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
     QRCode.toDataURL(downloadUrl, {
       width: 360,
       margin: 2,
-      color: { dark: "#0c0c0c", light: "#f3efe6" },
+      color: { dark: "#0C0C0C", light: "#FFFFFF" },
       errorCorrectionLevel: "M",
     }).then((url) => {
       if (!cancelled) setQrDataUrl(url);
@@ -41,7 +43,6 @@ export default function Landing() {
     };
   }, [downloadUrl]);
 
-  // Autoplay film muted (browsers block sound until a gesture)
   useEffect(() => {
     if (introDone || FORCE_SHELL) return;
     const el = videoRef.current;
@@ -54,7 +55,7 @@ export default function Landing() {
   useEffect(() => {
     if (FORCE_SHELL || !introDone) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab);
+    url.searchParams.set("tab", tab === "illustration" ? "illustration" : "mac");
     window.history.replaceState({}, "", url.toString());
   }, [tab, introDone]);
 
@@ -67,12 +68,10 @@ export default function Landing() {
     void el.play().catch(() => {});
   };
 
-  // Direct shell for judges
-  if (FORCE_SHELL) {
+  if (FORCE_SHELL || enterHome) {
     return <App skipVideo />;
   }
 
-  // Default entry: hero film
   if (!introDone) {
     return (
       <div className="video-stage">
@@ -98,35 +97,38 @@ export default function Landing() {
     );
   }
 
-  // Central page: QR download · mobile demo
   return (
-    <div className="gate">
+    <div className="gate home-gate">
       <header className="gate-top">
-        <p className="gate-brand">RESIDENCE</p>
-        <nav className="gate-tabs" aria-label="Residence">
+        <p className="gate-brand" aria-label="Home">
+          Home
+        </p>
+        <nav className="gate-tabs" aria-label="Home">
           <button
             type="button"
-            className={tab === "download" ? "on" : ""}
-            onClick={() => setTab("download")}
+            className={tab === "mac" ? "on" : ""}
+            onClick={() => setTab("mac")}
           >
-            Download
+            Residence on Mac
           </button>
           <button
             type="button"
-            className={tab === "demo" ? "on" : ""}
-            onClick={() => setTab("demo")}
+            className={tab === "illustration" ? "on" : ""}
+            onClick={() => setTab("illustration")}
           >
-            App demo
+            Conceptual illustration
           </button>
         </nav>
       </header>
 
-      {tab === "download" && (
+      {tab === "mac" && (
         <section className="gate-download">
           <div className="gate-copy">
-            <h1>Get Residence for Mac</h1>
+            <p className="gate-kicker">Residence / Home</p>
+            <h1>On your Mac</h1>
             <p>
-              Menu-bar agent: capture Claude / Notes / selection → Accept → Facts + native write-back.
+              Scan the QR, unzip, open. Menu-bar Home for a shared personal Fact graph —
+              capture, Accept, write back.
             </p>
             <a className="gate-link" href={downloadUrl} download>
               Download Residence-mac.zip
@@ -134,12 +136,11 @@ export default function Landing() {
             <ol className="gate-steps">
               <li>Unzip → open <code>Residence.app</code></li>
               <li>If blocked: Privacy &amp; Security → Open Anyway</li>
-              <li>Start Core on :8700 (<code>./scripts/residence-up.sh</code>)</li>
-              <li>
-                ⌘⇧R capture · ⌘⇧I Accept inbox
-              </li>
+              <li>Core on :8700 · ⌘⇧R capture · ⌘⇧I inbox</li>
             </ol>
-            <p className="gate-note">Apple Silicon · unsigned local build · Core required for live Facts.</p>
+            <p className="gate-note">
+              Apple Silicon · unsigned build · Open Anyway if prompted
+            </p>
           </div>
           <div className="gate-qr">
             {qrDataUrl ? (
@@ -157,10 +158,22 @@ export default function Landing() {
         </section>
       )}
 
-      {tab === "demo" && (
-        <div className="gate-demo">
-          <App skipVideo />
-        </div>
+      {tab === "illustration" && (
+        <section className="gate-illustration">
+          <div className="gate-illu-copy">
+            <p className="gate-script">Residence / Home</p>
+            <p className="gate-illu-line">
+              One shared personal context graph — so your apps stop lying to each other.
+            </p>
+            <button
+              type="button"
+              className="gate-link"
+              onClick={() => setEnterHome(true)}
+            >
+              Enter Home
+            </button>
+          </div>
+        </section>
       )}
     </div>
   );

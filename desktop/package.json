@@ -28,6 +28,8 @@
       "extendInfo": {
         "LSUIElement": true,
         "NSAppleEventsUsageDescription": "Residence writes accepted Facts into Calendar, Notes, and Reminders.",
+        "NSMicrophoneUsageDescription": "Residence listens when you speak a capture — e.g. save this to Notes or Calendar.",
+        "NSSpeechRecognitionUsageDescription": "Residence turns your speech into text that stays so you can edit and send.",
         "NSAppleScriptEnabled": true,
         "NSHumanReadableCopyright": "Residence — personal context graph",
         "CFBundleURLTypes": [

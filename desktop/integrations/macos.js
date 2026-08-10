@@ -11,6 +11,10 @@ const {
   resolveEventSchedule,
   formatWriteBody,
   summarizeContent,
+  detectWriteGenre,
+  splitCaptureParts,
+  extractUrl,
+  noteTitleForGenre,
 } = require("./schedule");
 
 function sleep(ms) {
@@ -671,22 +675,57 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
   const writes = [];
   const p = payload || {};
   const ut = utterance || "";
-  const urlMatch = ut.match(/https?:\/\/\S+/);
   const dest = String(opts.destination || "").toLowerCase();
+  const foundUrl = p.url || extractUrl(ut) || extractUrl(p.note || p.text || "");
+  const genre = detectWriteGenre({
+    source: p.source || opts.source || "",
+    q: p.q,
+    kind: p.kind,
+    url: foundUrl,
+    utterance: ut,
+    title: p.title,
+  });
+  const parts = splitCaptureParts({
+    utterance: ut,
+    content: p.note || p.incoming || p.text || ut || "",
+    title: p.title,
+    url: foundUrl,
+    selection: p.selection || p.incoming || "",
+    pageTitle: p.pageTitle || "",
+  });
   const title =
-    p.title || p.text || (ut ? ut.slice(0, 80) : "") || "Residence";
+    p.title ||
+    parts.primary ||
+    (ut ? ut.split("\n").find((l) => l.trim() && !/^https?:\/\//i.test(l.trim())) : "") ||
+    "Residence";
   const content = p.note || p.incoming || p.text || ut || "";
   const richBody = formatWriteBody({
     source: p.source || opts.source || "",
     captureMethod: p.captureMethod || opts.captureMethod || "",
     utterance: ut,
-    summary: p.summary || summarizeContent(content || title),
+    summary: p.summary || "",
+    intentTitle: opts.intentTitle || p.title || "",
     personalNote: p.personalNote || opts.personalNote || "",
     content,
     title,
+    url: foundUrl,
+    selection: p.selection || p.incoming || "",
+    pageTitle: p.pageTitle || "",
+    q: p.q || genre,
+    kind: p.kind,
+    whenLabel: opts.whenLabel || p.whenLabel || "",
+    dateISO: p.dateISO,
+    startHhmm: p.startHhmm || p.time,
+    destination: dest || actionApp,
+  });
+  const shortNoteTitle = noteTitleForGenre({
+    genre,
+    parts,
+    title,
+    destination: dest || actionApp,
   });
   const calArgs = {
-    title: title.slice(0, 120) || "Residence event",
+    title: String(title).slice(0, 120) || "Residence event",
     dayOfMonth: p.dayOfMonth || p.day,
     dateISO: p.dateISO,
     startHhmm: p.startHhmm || p.time,
@@ -702,7 +741,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
     try {
       writes.push(
         await createOrAppendNote({
-          title: title.slice(0, 80) || "Residence · Note",
+          title: shortNoteTitle.slice(0, 80) || "Residence · Note",
           body: richBody,
           operationId,
         })
@@ -722,11 +761,10 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
   }
   if (dest === "reminders") {
     try {
-      const remBody = [urlMatch && urlMatch[0], richBody].filter(Boolean).join("\n");
       writes.push(
         await createReminder({
-          title: title.slice(0, 120) || "Residence reminder",
-          body: remBody.slice(0, 1800),
+          title: String(title).slice(0, 120) || "Residence reminder",
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -746,7 +784,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.title || "Watch later",
-          body: urlMatch ? urlMatch[0] : ut.slice(0, 200),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -779,13 +817,16 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
           await createOrAppendNote({
             title: "Residence · Allergy check",
             body: formatWriteBody({
-              source: p.source,
-              captureMethod: p.captureMethod,
+              source: p.source || opts.source,
+              captureMethod: p.captureMethod || opts.captureMethod,
               utterance: ut,
               summary: `Check for ${p.allergen || "allergens"} before buying`,
-              personalNote: p.personalNote,
+              intentTitle: "Allergy check",
+              personalNote: p.personalNote || opts.personalNote,
               content: p.note || content,
               title: "Allergy check",
+              url: foundUrl,
+              q: "shopping",
             }),
             operationId,
           })
@@ -847,7 +888,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.title || "Review PR / issue",
-          body: [urlMatch && urlMatch[0], utterance].filter(Boolean).join("\n").slice(0, 400),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -859,7 +900,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.title || "Listen later",
-          body: ut.slice(0, 300),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -871,7 +912,7 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
       writes.push(
         await createReminder({
           title: p.title || "Read later",
-          body: [urlMatch && urlMatch[0], utterance].filter(Boolean).join("\n").slice(0, 400),
+          body: richBody.slice(0, 1800),
           operationId,
         })
       );
@@ -916,7 +957,10 @@ async function writeBack(actionApp, payload, utterance, operationId, opts = {}) 
     if (actionApp === "wellness" || actionApp === "notes") {
       writes.push(
         await createOrAppendNote({
-          title: actionApp === "notes" ? "Residence · Note" : "Residence · Wellness",
+          title:
+            actionApp === "notes"
+              ? shortNoteTitle.slice(0, 80) || "Residence · Note"
+              : "Residence · Wellness",
           body: richBody,
           operationId,
         })
@@ -1117,6 +1161,9 @@ module.exports = {
   resolveEventSchedule,
   formatWriteBody,
   summarizeContent,
+  detectWriteGenre,
+  splitCaptureParts,
+  noteTitleForGenre,
   nextValidOccurrence,
   INTEGRATIONS,
 };

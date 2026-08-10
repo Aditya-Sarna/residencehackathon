@@ -21,6 +21,7 @@ const {
   dialog,
   ipcMain,
   systemPreferences,
+  session,
 } = electron;
 
 const path = require("path");
@@ -35,6 +36,7 @@ const POLL_MS_OK = 2500;
 const POLL_MS_MAX = 30000;
 const HOTKEY = "CommandOrControl+Shift+R";
 const HOTKEY_CLIP = "CommandOrControl+Shift+C";
+const HOTKEY_VOICE = "CommandOrControl+Shift+M";
 const HOTKEY_ACCEPT = "CommandOrControl+Shift+A";
 const HOTKEY_DECLINE = "CommandOrControl+Shift+D";
 const HOTKEY_UNDO = "CommandOrControl+Shift+Z";
@@ -656,6 +658,7 @@ function setTrayMenu() {
         ]
       : []),
     { type: "separator" },
+    { label: "Speak to Residence (⌘⇧M)", click: () => openVoiceCapture() },
     { label: "Capture from front app (⌘⇧R)", click: () => captureSmart() },
     { label: "Capture clipboard only (⌘⇧C)", click: () => captureClipboard() },
     {
@@ -960,11 +963,11 @@ function openComposer(draft) {
     return;
   }
   composerWin = new BrowserWindow({
-    width: 520,
-    height: 360,
+    width: 540,
+    height: 440,
     resizable: true,
     minimizable: false,
-    title: "Residence capture",
+    title: "Residence · speak",
     show: false,
     alwaysOnTop: true,
     vibrancy: "sheet",
@@ -984,6 +987,36 @@ function openComposer(draft) {
   composerWin.on("closed", () => {
     composerWin = null;
     composerDraft = null;
+  });
+}
+
+/** Audio-first capture: mic opens, transcript stays, then Send → Accept destinations. */
+async function openVoiceCapture(seed = {}) {
+  try {
+    if (typeof systemPreferences.askForMediaAccess === "function") {
+      const ok = await systemPreferences.askForMediaAccess("microphone");
+      if (!ok) {
+        showNote(
+          "Residence",
+          "Microphone access needed — System Settings → Privacy & Security → Microphone → Residence.",
+          { force: true }
+        );
+      }
+    }
+  } catch (e) {
+    fileLog(`mic permission ask failed ${e}`);
+  }
+  openComposer({
+    text: seed.text || "",
+    appName: seed.appName || "Voice",
+    source: seed.source || "voice",
+    method: "voice",
+    kind: seed.kind || "speak",
+    voiceFirst: true,
+    title: seed.title || "Speak to Residence",
+    hint:
+      seed.hint ||
+      "Audio first — say what to save and where (Notes, Calendar, Reminders). Text stays to edit.",
   });
 }
 
@@ -1212,22 +1245,18 @@ async function captureSmart() {
         });
         return;
       }
-      let accessibilityHint = "Select text, or use ⌘⇧C for clipboard.";
-      try {
-        if (!systemPreferences.isTrustedAccessibilityClient(false)) {
-          accessibilityHint =
-            "Enable Accessibility for Residence (System Settings → Privacy), select text, retry.";
-          systemPreferences.isTrustedAccessibilityClient(true);
-        }
-      } catch {
-        /* ignore */
-      }
       showCaptureHud({
-        kicker: "Empty",
-        title: `Nothing from ${result.appName}`,
-        body: accessibilityHint,
+        kicker: "Voice",
+        title: "Nothing selected — speak instead",
+        body: "Opening mic. Say what to save and where.",
         app: result.appName,
-        method: result.method || "none",
+        method: "voice",
+      });
+      await openVoiceCapture({
+        appName: result.appName,
+        source: "voice",
+        title: "Speak to Residence",
+        hint: `No text from ${result.appName}. Speak a request — e.g. save this to Notes.`,
       });
       return;
     }
@@ -1555,6 +1584,8 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
         source: item.source,
         captureMethod: item.captureMethod,
         personalNote,
+        intentTitle: item.title || shaped.payload?.title || "",
+        whenLabel: item.whenLabel || shaped.payload?.whenLabel || "",
       }
     );
     if (wb.ok && wb.writes?.length) {
@@ -1737,6 +1768,7 @@ function handleProtocolUrl(url) {
     if (u.protocol !== "residence:") return;
     const host = u.hostname || u.pathname.replace(/^\//, "");
     if (host === "capture") captureSmart();
+    else if (host === "voice" || host === "speak") openVoiceCapture();
     else if (host === "inbox") openInbox();
     else if (host === "status") openStatus();
     else if (host === "briefing") runMorningBriefing({ force: true });
@@ -1838,9 +1870,10 @@ function registerIpc() {
     const clean = String(text || "").trim();
     if (!clean) throw new Error("empty capture");
     if (composerWin && !composerWin.isDestroyed()) composerWin.close();
-    await postCapture(clean, draft.source || "macos", {
+    const voice = draft.method === "voice" || draft.voiceFirst;
+    await postCapture(clean, voice ? "voice" : draft.source || "macos", {
       ...draft,
-      method: draft.method || "composer",
+      method: voice ? "voice" : draft.method || "composer",
       text: clean,
     });
     return { ok: true };
@@ -1856,6 +1889,7 @@ function registerIpc() {
     });
     return { ok: true };
   });
+  ipcMain.handle("open-voice", () => openVoiceCapture());
   ipcMain.handle("retry-writeback", async (_e, operationId) => {
     const rows = loadWritebackRetries();
     const row = rows.find((r) => r.operationId === operationId);
@@ -1987,6 +2021,25 @@ app.on("open-url", (event, url) => {
 });
 
 app.whenReady().then(() => {
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      const allow = [
+        "media",
+        "microphone",
+        "speechRecognition",
+        "mediaKeySystem",
+      ].includes(permission);
+      callback(allow);
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      return ["media", "microphone", "speechRecognition", "mediaKeySystem"].includes(
+        permission
+      );
+    });
+  } catch (e) {
+    fileLog(`session permission handlers failed ${e}`);
+  }
+
   registerIpc();
   const settings = loadSettings();
   applyDockPreference(!!settings.showDock);
@@ -2015,6 +2068,7 @@ app.whenReady().then(() => {
 
   failedHotkeys = [];
   const hotkeys = [
+    [HOTKEY_VOICE, () => openVoiceCapture()],
     [HOTKEY, () => captureSmart()],
     [HOTKEY_CLIP, () => captureClipboard()],
     [HOTKEY_ACCEPT, () => resolveTopPending(true)],
@@ -2048,7 +2102,7 @@ app.whenReady().then(() => {
 
   showNote(
     "Residence",
-    "Menu-bar agent · briefing · ⌘⇧R capture · ⌘⇧I inbox"
+    "Menu-bar agent · ⌘⇧M speak · ⌘⇧R capture · ⌘⇧I inbox"
   );
 });
 

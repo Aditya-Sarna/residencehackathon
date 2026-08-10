@@ -4,6 +4,8 @@ const {
   formatWriteBody,
   summarizeContent,
   nextValidOccurrence,
+  detectWriteGenre,
+  splitCaptureParts,
 } = require("./schedule");
 
 function test(name, fn) {
@@ -50,19 +52,98 @@ test("dateISO preferred over dayOfMonth", () => {
   assert.strictEqual(s.startHhmm, "09:30");
 });
 
-test("formatWriteBody includes source summary personal note", () => {
+test("splitCaptureParts strips URL and helper prompts", () => {
+  const parts = splitCaptureParts({
+    utterance: `(82) WhatsApp
+https://web.whatsapp.com/
+Turn this into a Calendar commitment or reminder?`,
+  });
+  assert.strictEqual(parts.primary, "(82) WhatsApp");
+  assert.strictEqual(parts.url, "https://web.whatsapp.com/");
+});
+
+test("detectWriteGenre messaging-web", () => {
+  assert.strictEqual(
+    detectWriteGenre({
+      source: "messaging-web",
+      url: "https://web.whatsapp.com/",
+    }),
+    "messaging-web"
+  );
+});
+
+test("formatWriteBody messaging layout", () => {
+  const body = formatWriteBody({
+    source: "messaging-web",
+    captureMethod: "browser-tab",
+    summary: "(82) WhatsApp https://web.whatsapp.com/ Turn this into a Calendar commitment",
+    intentTitle: "Add to Calendar?",
+    personalNote: "Look at this message for submission details",
+    content: `(82) WhatsApp
+https://web.whatsapp.com/
+Turn this into a Calendar commitment or reminder?`,
+    utterance: `(82) WhatsApp
+https://web.whatsapp.com/
+Turn this into a Calendar commitment or reminder?`,
+    title: "Add to Calendar?",
+    savedAt: new Date(2026, 7, 10, 15, 1, 0),
+  });
+  assert.match(body, /^Message\n\(82\) WhatsApp/m);
+  assert.match(body, /^Link\nhttps:\/\/web\.whatsapp\.com\//m);
+  assert.match(body, /^AI interpretation\nAdd to Calendar\?/m);
+  assert.match(body, /^My note\nLook at this message for submission details/m);
+  assert.match(body, /^Saved\n/m);
+  assert.doesNotMatch(body, /Turn this into a Calendar/);
+  assert.doesNotMatch(body, /Source: messaging-web Summary:/);
+  assert.doesNotMatch(body, /Content:/);
+});
+
+test("formatWriteBody youtube genre", () => {
+  const body = formatWriteBody({
+    source: "youtube",
+    q: "youtube",
+    content: `Watch this video: Cool talk
+https://youtube.com/watch?v=abc
+Should I block watch time or save watch-later?`,
+    intentTitle: "Watch later",
+    personalNote: "After standup",
+    savedAt: new Date(2026, 7, 10, 12, 0, 0),
+  });
+  assert.match(body, /^Video\n/m);
+  assert.match(body, /^Link\nhttps:\/\/youtube\.com\/watch\?v=abc/m);
+  assert.match(body, /^AI interpretation\nWatch later/m);
+  assert.match(body, /^My note\nAfter standup/m);
+});
+
+test("formatWriteBody shopping genre", () => {
+  const body = formatWriteBody({
+    q: "shopping",
+    content: `Shopping: Running shoes
+https://amazon.com/dp/x
+Check budget / allergy before buying? Save to shopping list?`,
+    summary: "Budget check before buying running shoes",
+    personalNote: "Need size 10",
+    whenLabel: "Tue Aug 11 · 10:00 AM",
+    destination: "calendar",
+  });
+  assert.match(body, /^Product\n/m);
+  assert.match(body, /^AI interpretation\nBudget check before buying running shoes/m);
+  assert.match(body, /^When\nTue Aug 11 · 10:00 AM/m);
+});
+
+test("formatWriteBody includes source summary personal note (compat)", () => {
   const body = formatWriteBody({
     source: "Claude",
     captureMethod: "selection",
     summary: "Dinner plan",
     personalNote: "Bring wine",
     content: "Dinner with Sam tomorrow at 7pm",
+    savedAt: new Date(2026, 7, 10, 12, 0, 0),
   });
-  assert.match(body, /Source: Claude · selection/);
-  assert.match(body, /Summary: Dinner plan/);
-  assert.match(body, /Bring wine/);
-  assert.match(body, /Content:/);
   assert.match(body, /Dinner with Sam/);
+  assert.match(body, /AI interpretation\nDinner plan/);
+  assert.match(body, /My note\nBring wine/);
+  assert.match(body, /Source\nClaude · selection/);
 });
 
 test("summarizeContent truncates", () => {
