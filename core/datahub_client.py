@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from typing import Any, Optional
 
@@ -43,6 +44,7 @@ from datahub.metadata.schema_classes import (
 # Personal Context domain — every Residence Fact lives here
 RESIDENCE_DOMAIN_URN = "urn:li:domain:residence.personal-context"
 AGENT_CACHE_TTL = int(os.getenv("RESIDENCE_AGENT_CACHE_TTL", "30"))
+_AGENT_CACHE_LOCK = threading.Lock()
 
 from models import (
     Agent,
@@ -211,41 +213,58 @@ class DataHubClient:
         os.makedirs(d, exist_ok=True)
         return os.path.join(d, "agents.json")
 
-    def _save_agent_cache(self, agent: Agent) -> None:
-        path = self._agent_cache_path()
-        data: dict[str, Any] = {}
-        if os.path.exists(path):
-            with open(path) as f:
-                data = json.load(f)
-        payload = agent.model_dump(mode="json")
-        payload["_cachedAt"] = time.time()
-        data[agent.agentId] = payload
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
-
-    def _load_agent_cache_entry(self, agent_id: str) -> tuple[Optional[Agent], float]:
+    def _read_agent_cache(self) -> dict[str, Any]:
         path = self._agent_cache_path()
         if not os.path.exists(path):
-            return None, 0.0
+            return {}
         try:
             with open(path) as f:
                 data = json.load(f)
-        except Exception:
-            return None, 0.0
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            log.warning("agent cache unreadable (%s) — rebuilding", e)
+            try:
+                os.replace(path, path + ".corrupt")
+            except OSError:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            return {}
+
+    def _save_agent_cache(self, agent: Agent) -> None:
+        path = self._agent_cache_path()
+        payload = agent.model_dump(mode="json")
+        payload["_cachedAt"] = time.time()
+        with _AGENT_CACHE_LOCK:
+            data = self._read_agent_cache()
+            data[agent.agentId] = payload
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, path)
+
+    def _load_agent_cache_entry(self, agent_id: str) -> tuple[Optional[Agent], float]:
+        with _AGENT_CACHE_LOCK:
+            data = self._read_agent_cache()
         raw = data.get(agent_id)
-        if not raw:
+        if not raw or not isinstance(raw, dict):
             return None, 0.0
         cached_at = float(raw.get("_cachedAt") or 0)
-        return (
-            Agent(
-                agentId=raw["agentId"],
-                displayName=raw["displayName"],
-                readScopes=[SensitivityTag(s) for s in raw.get("readScopes", [])],
-                writeScopes=list(raw.get("writeScopes", [])),
-                implementation=raw.get("implementation", "in_house_app"),
-            ),
-            cached_at,
-        )
+        try:
+            return (
+                Agent(
+                    agentId=raw["agentId"],
+                    displayName=raw["displayName"],
+                    readScopes=[SensitivityTag(s) for s in raw.get("readScopes", [])],
+                    writeScopes=list(raw.get("writeScopes", [])),
+                    implementation=raw.get("implementation", "in_house_app"),
+                ),
+                cached_at,
+            )
+        except Exception:
+            return None, 0.0
 
     def ensure_domain(self) -> str:
         """Personal Context domain — the DataHub container for every Fact."""

@@ -266,7 +266,7 @@ export default function App({ skipVideo = false }: AppProps) {
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [claudeErr, setClaudeErr] = useState("");
   const tickRef = useRef<number | null>(null);
-  const speechRef = useRef<ReturnType<typeof createSpeechSession> | null>(null);
+  const speechRef = useRef<Awaited<ReturnType<typeof createSpeechSession>>>(null);
   const demoBtnRef = useRef<HTMLButtonElement | null>(null);
   const claudeEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -886,14 +886,25 @@ export default function App({ skipVideo = false }: AppProps) {
     setRecording(true);
     if (!speechSupported()) {
       setToast("Mic isn’t available — type below, then Understand.");
+      setRecording(false);
       return;
     }
-    speechRef.current = createSpeechSession({
-      onPartial: (t) => setTranscript(t),
-      onFinal: (t) => setTranscript(t),
-      onError: (m) => setToast(m),
-    });
-    speechRef.current?.start();
+    void (async () => {
+      const session = await createSpeechSession({
+        onPartial: (t) => setTranscript(t),
+        onFinalChunk: (t) => setTranscript(t),
+        onError: (m) => {
+          setToast(m);
+          setRecording(false);
+        },
+      });
+      if (!session) {
+        setRecording(false);
+        return;
+      }
+      speechRef.current = session;
+      session.start();
+    })();
   };
 
   const stopAndUnderstand = async () => {

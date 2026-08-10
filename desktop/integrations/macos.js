@@ -86,6 +86,15 @@ async function writePasteboard(text) {
   });
 }
 
+function isSelfApp(name) {
+  return /^(residence|electron)(\s|$)/i.test(String(name || "").trim());
+}
+
+/** Last frontmost app that was not Residence/Electron — used when Capture is
+ *  triggered from the pill (which makes Residence frontmost). */
+let lastExternalFrontmost = "";
+let lastExternalAt = 0;
+
 async function frontmostApp() {
   try {
     const name = await osascript([
@@ -93,10 +102,37 @@ async function frontmostApp() {
       "  name of first application process whose frontmost is true",
       "end tell",
     ]);
-    return name || "Unknown";
+    const cleaned = (name || "").trim() || "Unknown";
+    if (cleaned !== "Unknown" && !isSelfApp(cleaned)) {
+      lastExternalFrontmost = cleaned;
+      lastExternalAt = Date.now();
+    }
+    return cleaned;
   } catch {
     return "Unknown";
   }
+}
+
+/**
+ * The app Capture should read. When the pill is focused, System Events reports
+ * Residence as frontmost — fall back to the last real app the user was in.
+ */
+async function captureTargetApp() {
+  const front = await frontmostApp();
+  if (front && front !== "Unknown" && !isSelfApp(front)) return front;
+  if (lastExternalFrontmost && Date.now() - lastExternalAt < 10 * 60 * 1000) {
+    return lastExternalFrontmost;
+  }
+  return front || "Unknown";
+}
+
+/** Cheap poll so clicking Capture in the pill still knows what was behind it. */
+function startFrontmostTracker(intervalMs = 1000) {
+  const tick = () => {
+    frontmostApp().catch(() => {});
+  };
+  tick();
+  return setInterval(tick, intervalMs);
 }
 
 function sourceFromApp(appName) {
@@ -158,12 +194,12 @@ async function captureSelectedTextAX(appName) {
  * Uses system pasteboard (pbcopy/pbpaste) + activate front app — Electron clipboard
  * alone often races or reads before the pasteboard updates.
  */
-async function captureSelection(clipboard) {
-  const front = await frontmostApp();
+async function captureSelection(clipboard, preferredApp = "") {
+  const front = preferredApp || (await captureTargetApp());
   // Prefer AX — no clipboard side effects when it works.
-  if (front && front !== "Unknown" && !/^residence|electron$/i.test(front)) {
+  if (front && front !== "Unknown" && !isSelfApp(front)) {
     const ax = await captureSelectedTextAX(front);
-    if (ax) return { text: ax, method: "selection-ax" };
+    if (ax) return { text: ax, method: "selection-ax", appName: front };
   }
 
   const previous =
@@ -177,14 +213,14 @@ async function captureSelection(clipboard) {
     // Let global-hotkey modifiers (⇧⌘) release before we synthesize ⌘C.
     await sleep(80);
 
-    const target = front && !/^residence|electron$/i.test(front) ? front : "";
+    const target = front && !isSelfApp(front) && front !== "Unknown" ? front : "";
     await osascript([
       "set targetApp to " + JSON.stringify(target),
       'if targetApp is not "" then',
       "  try",
       "    tell application targetApp to activate",
       "  end try",
-      "  delay 0.08",
+      "  delay 0.12",
       "end if",
       'tell application "System Events"',
       '  keystroke "c" using command down',
@@ -209,9 +245,9 @@ async function captureSelection(clipboard) {
     if (typeof clipboard?.writeText === "function") clipboard.writeText(previous);
 
     if (!text || text === marker) {
-      return { text: "", method: "selection-empty" };
+      return { text: "", method: "selection-empty", appName: front };
     }
-    return { text, method: "selection" };
+    return { text, method: "selection", appName: front };
   } catch (e) {
     try {
       await writePasteboard(previous);
@@ -429,18 +465,34 @@ async function browserTabRaw(source) {
 
 /**
  * Smart capture: selection first, then app-specific / YouTube / Gmail tab context.
+ * Uses the last real frontmost app when Residence's own pill is focused.
  */
 async function smartCapture(clipboard) {
-  const appName = await frontmostApp();
+  const appName = await captureTargetApp();
   let source = sourceFromApp(appName);
   let text = "";
   let method = "none";
   let kind = null;
   let meta = { appName, source };
 
+  // Bring the target app forward so AX / ⌘C hit the window the user was in,
+  // not the Residence pill they just clicked.
+  if (appName && appName !== "Unknown" && !isSelfApp(appName)) {
+    try {
+      await osascript([
+        "try",
+        `  tell application ${JSON.stringify(appName)} to activate`,
+        "end try",
+        "delay 0.1",
+      ]);
+    } catch {
+      /* continue — selection may still work via AX */
+    }
+  }
+
   let selection = "";
   try {
-    const sel = await captureSelection(clipboard);
+    const sel = await captureSelection(clipboard, appName);
     if (sel.text) {
       selection = sel.text;
       method = "selection";
@@ -1150,6 +1202,9 @@ const INTEGRATIONS = [
 module.exports = {
   osascript,
   frontmostApp,
+  captureTargetApp,
+  startFrontmostTracker,
+  isSelfApp,
   sourceFromApp,
   smartCapture,
   captureSelection,

@@ -15,7 +15,12 @@ unset ELECTRON_RUN_AS_NODE
 
 cd "$DESKTOP"
 npm ci
-npx electron-builder --mac dmg zip --publish never
+# Signed releases need the hardened runtime; local unsigned `npm run dist` turns it off
+# so Gatekeeper does not kill the ad-hoc binary with a broken signature.
+npx electron-builder --mac dmg zip --publish never \
+  --config.mac.hardenedRuntime=true \
+  --config.mac.gatekeeperAssess=true \
+  --config.mac.identity="$CSC_IDENTITY"
 
 for artifact in dist/*.dmg dist/*.zip; do
   [[ -f "$artifact" ]] || continue

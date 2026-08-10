@@ -80,8 +80,10 @@ jobs:
         working-directory: desktop
         run: |
           node --check main.js
-          node --check permission.js
+          node --check preload.js
           node --check integrations/macos.js
+          node --check integrations/schedule.js
+          node --test integrations/*.test.js
           test -f assets/trayTemplate.png
           test -f assets/Residence.icns
           test -f entitlements.mac.plist

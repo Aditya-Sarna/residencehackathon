@@ -16,7 +16,9 @@ Target: **self-hosted personal OS** you can run every day without babysitting.
 | 8 | Docker image + compose | ✅ `Dockerfile`, `docker-compose.yml` |
 | 9 | One-command up/down | ✅ `scripts/residence-up.sh` / `residence-down.sh` |
 | 10 | macOS LaunchAgent (Core at login) | ✅ `scripts/install-launchagent.sh` |
-| 11 | Mac first-run permission wizard | ✅ `desktop/first-run.html` |
+| 11 | Mac first-run permission preflight (in the pill) | ✅ `desktop/main.js` `openFirstRun()` |
+| 11b | Smart-capture pipeline with contradiction accept/decline + saved flash | ✅ `desktop/main.js` `captureSmart()`, `flashSaved()`, `desktop/status.html` |
+| 11c | Built-in diagnostics (`Residence --selftest`) | ✅ `desktop/main.js` `collectDiagnostics()` |
 | 12 | Mac entitlements + Automation usage string | ✅ |
 | 13 | Desktop reconnect w/ exponential backoff + file logs | ✅ |
 | 14 | CI (pytest + shell vitest/build + desktop syntax + Mac pack) | ✅ `.github/workflows/ci.yml` |
@@ -30,6 +32,12 @@ Target: **self-hosted personal OS** you can run every day without babysitting.
 | 22 | Judge path unit contract (vitest) | ✅ `shell/src/judgeDemo.test.ts` |
 | 23 | Security policy | ✅ `SECURITY.md` |
 | 24 | Mac install steps on landing Download tab | ✅ `shell/src/Landing.tsx` |
+| 25 | Browser Connect → Capture → Accept loop wired to live Core (no audio) | ✅ `shell/src/ResidenceWeb.tsx`, `shell/src/pages/CapturePage.tsx`, `shell/src/pages/AcceptPage.tsx` |
+| 26 | Real Google OAuth (Calendar/Gmail/Tasks/Docs) — live writes/reads, no fake "connected" state | ✅ `shell/src/browser/googleAuth.ts`, `googleApi.ts` — setup: `shell/GOOGLE_SETUP.md` |
+| 27 | Real Spotify OAuth (PKCE) — live save-to-library | ✅ `shell/src/browser/spotifyAuth.ts`, `spotifyApi.ts` — setup: `shell/SPOTIFY_SETUP.md` |
+| 28 | Keyless real integrations (Maps/Weather/YouTube) always live, no demo state | ✅ `core/public_apps.py`, `core/media_apps.py` |
+| 29 | Apple Notes/Reminders (no browser-reachable API) dropped from web grid in favor of real Google Docs/Tasks | ✅ `shell/src/browser/integrationsCatalog.ts` |
+| 30 | Browser Accept mirrors Mac decide semantics 1:1 — same contradiction accept/decline, same shared Fact graph, same multi-undo stack (⌘⇧Z on Mac, ↺ Undo bar on web), both hitting the same `/desktop/resolve` + `/desktop/undo` | ✅ `shell/src/pages/AcceptPage.tsx`, `desktop/main.js` `undoLastAccept()` |
 
 ## Operator runbook
 
@@ -49,6 +57,10 @@ datahub docker quickstart
 
 # 5) Docker alternative
 docker compose up -d --build
+
+# 6) Optional — real Google/Spotify writes in the browser shell
+cp shell/.env.example shell/.env
+# fill VITE_GOOGLE_CLIENT_ID / VITE_SPOTIFY_CLIENT_ID — see shell/GOOGLE_SETUP.md, shell/SPOTIFY_SETUP.md
 ```
 
 Clients must send:

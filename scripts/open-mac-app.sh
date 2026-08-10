@@ -50,9 +50,19 @@ else
   echo "WARN: Core still offline — Mac app will show offline HUD until uvicorn is up."
 fi
 
+# Prefer /Applications so Accessibility grants stick to one stable path.
+APPS_DEST="/Applications/Residence.app"
+rm -rf "$APPS_DEST"
+cp -R "$APP" "$APPS_DEST"
+harden "$APPS_DEST"
+
 echo "Opening Residence…"
-env -u ELECTRON_RUN_AS_NODE open "$DEST"
+# Never inherit ELECTRON_RUN_AS_NODE from Cursor/CI — it makes the app exit instantly.
+env -u ELECTRON_RUN_AS_NODE open "$APPS_DEST"
 echo ""
-echo "Look for: menu-bar R · status / first-run window (Dock optional)."
+echo "Installed to $APPS_DEST (also copied to $DEST)."
+echo "Look for: menu-bar R · pill UI (Dock optional)."
+echo "If capture fails: System Settings → Privacy & Security → Accessibility → Residence ON"
+echo "  (if listed but greyed out after an update: toggle OFF then ON)"
 echo "If macOS blocks it: System Settings → Privacy & Security → Open Anyway"
-echo "Hotkeys: ⌘⇧R edit+send · ⌘⇧I inbox · ⌘⇧Z undo"
+echo "Hotkeys: ⌘⇧R capture · ⌘⇧I inbox · ⌘⇧Z undo"

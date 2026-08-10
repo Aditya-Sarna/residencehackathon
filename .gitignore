@@ -40,3 +40,4 @@ text_residence_should_come_aft.mp4
 shell/public/mac/*.zip
 skills-config/*.png
 skills-config/Screenshot*
+.env*

@@ -36,25 +36,28 @@ const POLL_MS_OK = 2500;
 const POLL_MS_MAX = 30000;
 const HOTKEY = "CommandOrControl+Shift+R";
 const HOTKEY_CLIP = "CommandOrControl+Shift+C";
-const HOTKEY_VOICE = "CommandOrControl+Shift+M";
 const HOTKEY_ACCEPT = "CommandOrControl+Shift+A";
 const HOTKEY_DECLINE = "CommandOrControl+Shift+D";
 const HOTKEY_UNDO = "CommandOrControl+Shift+Z";
 const HOTKEY_INBOX = "CommandOrControl+Shift+I";
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-  process.exit(0);
+/** Headless health report: `Residence --selftest`. Skips the tray and windows. */
+const SELFTEST =
+  process.argv.includes("--selftest") || process.env.RESIDENCE_SELFTEST === "1";
+
+if (!SELFTEST) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    // Another copy already owns the menu bar — most often a stale build the user
+    // still has in Downloads.
+    console.error("Residence is already running — quit the other copy first.");
+    app.quit();
+    process.exit(0);
+  }
 }
 
 let tray = null;
-let permissionWin = null;
 let statusWin = null;
-let firstRunWin = null;
-let hudWin = null;
-let composerWin = null;
-let hudTimer = null;
 let pollTimer = null;
 let pollMs = POLL_MS_OK;
 const lastNotifiedIds = new Set();
@@ -68,6 +71,7 @@ let inboxIndex = 0;
 let composerDraft = null;
 let failedHotkeys = [];
 let lastDockBounceAt = 0;
+let frontmostTracker = null;
 
 function schedulePoll() {
   if (pollTimer) clearInterval(pollTimer);
@@ -276,13 +280,17 @@ function buildActionOptions(item) {
   };
 
   if (item?.kind === "contradiction") {
-    push({
-      id: "notes",
-      label: "Notes",
-      hint: "Keep the new version",
-      destination: "notes",
-      primary: true,
-    });
+    // Contradictions resolve the Fact graph itself, not a Mac destination —
+    // the pill shows a dedicated Accept/Decline choice for these.
+    return [
+      {
+        id: "notes",
+        label: "Accept new",
+        hint: "Update the shared Fact",
+        destination: "notes",
+        primary: true,
+      },
+    ];
   }
   if (item?.kind === "related_chats" || q === "related_chats") {
     push({
@@ -546,61 +554,96 @@ function showNote(title, body, opts = {}) {
   return n;
 }
 
-function ensureHud() {
-  if (hudWin && !hudWin.isDestroyed()) return hudWin;
-  const { screen } = electron;
-  const display = screen.getPrimaryDisplay();
-  const width = Math.min(560, Math.floor(display.workAreaSize.width * 0.42));
-  hudWin = new BrowserWindow({
-    width,
-    height: 150,
-    x: Math.floor(display.workArea.x + (display.workArea.width - width) / 2),
-    y: display.workArea.y + 18,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    focusable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    show: false,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+function showCaptureHud(payload) {
+  // All chrome lives in the pill — surfaced as a timed toast line.
+  showToast({
+    kicker: payload?.kicker,
+    title: payload?.title,
+    body: payload?.body,
+    tone: payload?.tone,
+    ms: payload?.ms,
   });
-  hudWin.setAlwaysOnTop(true, "floating");
-  hudWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  hudWin.loadFile(path.join(__dirname, "hud.html"));
-  hudWin.on("closed", () => {
-    hudWin = null;
-  });
-  return hudWin;
 }
 
-function showCaptureHud(payload) {
-  const win = ensureHud();
-  const send = () => win.webContents.send("hud", payload);
-  if (win.isVisible()) send();
-  else {
-    win.once("ready-to-show", () => {
-      win.showInactive();
-      send();
-    });
-    win.showInactive();
-    if (!win.webContents.isLoading()) send();
+/**
+ * Toasts ride their own channel so a routine status refresh can never wipe out
+ * the one line telling the user their capture was saved.
+ */
+function showToast({ kicker, title, body, tone = "info", ms, fix = null, fixSecondary = null } = {}) {
+  const win = ensureStatusWin();
+  if (!win) return;
+  if (!win.isVisible()) win.showInactive();
+  const serialise = (f) =>
+    f && f.label && f.action ? { label: f.label, action: f.action } : null;
+  sendToPill(win, "toast", {
+    kicker: kicker || "",
+    title: title || "",
+    body: body || "",
+    tone,
+    ms: ms || (tone === "error" ? 7000 : 3500),
+    // Serialisable action name only — the renderer maps it to a real handler.
+    fix: serialise(fix),
+    fixSecondary: serialise(fixSecondary),
+  });
+}
+
+const PILL_WIDTH = 520;
+const PILL_HEIGHTS = { actions: 132, apps: 132, prefs: 132, fix: 132, compose: 196, decide: 196 };
+
+function sizePill(bank) {
+  if (!statusWin || statusWin.isDestroyed()) return;
+  statusWin.setContentSize(PILL_WIDTH, PILL_HEIGHTS[bank] || PILL_HEIGHTS.actions);
+}
+
+function ensureStatusWin() {
+  if (statusWin && !statusWin.isDestroyed()) return statusWin;
+  openStatus({ activate: false });
+  return statusWin;
+}
+
+function sendToPill(win, channel, payload) {
+  const send = () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send(channel, payload);
+  };
+  if (win.webContents.isLoadingMainFrame()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
   }
-  if (hudTimer) clearTimeout(hudTimer);
-  hudTimer = setTimeout(() => {
-    if (hudWin && !hudWin.isDestroyed()) {
-      hudWin.webContents.send("hud", { hide: true });
-      setTimeout(() => {
-        if (hudWin && !hudWin.isDestroyed()) hudWin.hide();
-      }, 280);
-    }
-  }, 3200);
+}
+
+/**
+ * @param {"actions"|"apps"|"prefs"|"fix"|"compose"|"decide"} view
+ * @param {object} payload
+ * @param {{activate?: boolean}} opts  activate=false surfaces the pill without
+ *   stealing focus, which is what background events (new pending items, poll
+ *   results) must do so the user can keep typing in whatever app they are in.
+ */
+function pushPill(view, payload = {}, opts = {}) {
+  const win = ensureStatusWin();
+  if (!win) return;
+  const activate = opts.activate === true;
+  sizePill(view);
+  if (activate) {
+    win.show();
+    win.focus();
+  } else if (!win.isVisible()) {
+    win.showInactive();
+  }
+  sendToPill(win, "pill", { view, ...payload });
+}
+
+/**
+ * Full-pill green checkmark flash, played whenever a capture is actually
+ * written to the shared Fact graph. This is the one moment the user should
+ * feel "that's saved" without reading anything.
+ */
+function flashSaved({ title = "", body = "" } = {}) {
+  const win = ensureStatusWin();
+  if (!win) return;
+  if (!win.isVisible()) win.showInactive();
+  sendToPill(win, "saved", { title, body });
 }
 
 function notifyOffline() {
@@ -657,8 +700,23 @@ function setTrayMenu() {
           },
         ]
       : []),
+    ...(!hasAccessibility() && !accessibilityNagDismissed
+      ? [
+          {
+            label: "Refresh Accessibility…",
+            click: () =>
+              ensureAccessibility({ reason: "tray", openSettings: true, force: true }),
+          },
+        ]
+      : []),
     { type: "separator" },
-    { label: "Speak to Residence (⌘⇧M)", click: () => openVoiceCapture() },
+    {
+      label:
+        statusWin && !statusWin.isDestroyed() && statusWin.isVisible()
+          ? "Hide Residence (Esc)"
+          : "Show Residence",
+      click: () => toggleStatus(),
+    },
     { label: "Capture from front app (⌘⇧R)", click: () => captureSmart() },
     { label: "Capture clipboard only (⌘⇧C)", click: () => captureClipboard() },
     {
@@ -692,7 +750,10 @@ function setTrayMenu() {
       enabled: acceptStack.length > 0,
       click: () => undoLastAccept(),
     },
-    { label: "Integrations…", click: () => openStatus() },
+    {
+      label: "Integrations…",
+      click: () => openStatus({ activate: true, view: "apps" }),
+    },
     {
       label: "Edit before send (extra step)",
       type: "checkbox",
@@ -785,21 +846,10 @@ function setTrayMenu() {
         shell.showItemInFolder(cfg);
       },
     },
+    { label: "Run diagnostics…", click: () => showDiagnostics() },
     {
-      label: "Core health",
-      click: async () => {
-        try {
-          const { json } = await api("GET", "/health");
-          dialog.showMessageBox({
-            type: "info",
-            title: "Residence Core",
-            message: json.ok ? "Healthy" : "Unhealthy",
-            detail: JSON.stringify(json, null, 2),
-          });
-        } catch (e) {
-          dialog.showErrorBox("Residence Core", String(e.message || e));
-        }
-      },
+      label: "Open log file",
+      click: () => shell.showItemInFolder(logPath()),
     },
     { type: "separator" },
     { label: "Quit Residence", click: () => app.quit() },
@@ -808,35 +858,35 @@ function setTrayMenu() {
   updateTrayBadge(pendingCount);
 }
 
-async function openInbox() {
+async function openInbox({ activate = true } = {}) {
   try {
     const { json } = await api("GET", "/desktop/pending");
     pendingInbox = json.pending || [];
     inboxIndex = 0;
     updateTrayBadge(pendingInbox.length);
     if (!pendingInbox.length) {
-      showNote("Residence", "Inbox clear — nothing pending.", { force: true });
+      showToast({ kicker: "Inbox", title: "Nothing to review" });
+      pushPill("actions", {}, { activate });
       return;
     }
-    openPermission(decoratePermission(pendingInbox[0], 0, pendingInbox.length));
+    openPermission(decoratePermission(pendingInbox[0], 0, pendingInbox.length), {
+      activate,
+    });
   } catch {
     notifyOffline();
   }
 }
 
-async function openTopPending() {
-  return openInbox();
-}
-
-function inboxShowCurrent() {
+function inboxShowCurrent({ activate = false } = {}) {
   if (!pendingInbox.length) {
-    if (permissionWin && !permissionWin.isDestroyed()) permissionWin.close();
-    showNote("Residence", "Inbox clear.", { force: true });
+    showToast({ kicker: "Inbox", title: "All caught up" });
+    pushPill("actions", {}, { activate });
     return;
   }
   inboxIndex = Math.max(0, Math.min(inboxIndex, pendingInbox.length - 1));
   openPermission(
-    decoratePermission(pendingInbox[inboxIndex], inboxIndex, pendingInbox.length)
+    decoratePermission(pendingInbox[inboxIndex], inboxIndex, pendingInbox.length),
+    { activate }
   );
 }
 
@@ -879,12 +929,18 @@ async function undoLastAccept() {
     });
     if (status >= 400) throw new Error(json.detail || "undo failed");
     acceptStack.shift();
-    showNote("Residence", `Undone — removed “${last.title || "last accept"}” from shared Facts.`, {
-      force: true,
+    showToast({
+      kicker: "Undone",
+      title: last.title || "Reverted",
+      body: "Removed from Facts and Mac apps.",
     });
     setTrayMenu();
   } catch (e) {
-    showNote("Residence", `Undo failed — ${String(e.message || e)}`, { force: true });
+    showToast({
+      kicker: "Undo failed",
+      title: String(e.message || e).slice(0, 90),
+      tone: "error",
+    });
   }
 }
 
@@ -894,133 +950,138 @@ function pushStatusRefresh() {
   }
 }
 
-function openStatus() {
+const pillStatePath = () => path.join(app.getPath("userData"), "pill-window.json");
+
+function savePillPosition() {
+  if (!statusWin || statusWin.isDestroyed()) return;
+  try {
+    const [x, y] = statusWin.getPosition();
+    writeJson(pillStatePath(), { x, y });
+  } catch {
+    /* position is a nicety, never fail the app over it */
+  }
+}
+
+/** Default resting place: bottom-centre of the active display, above the Dock. */
+function defaultPillPosition() {
+  const { screen } = electron;
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  return {
+    x: Math.round(area.x + (area.width - PILL_WIDTH) / 2),
+    y: Math.round(area.y + area.height - PILL_HEIGHTS.actions - 28),
+  };
+}
+
+function applyPillPosition(win) {
+  const { screen } = electron;
+  const saved = readJson(pillStatePath(), null);
+  if (
+    saved &&
+    Number.isFinite(saved.x) &&
+    Number.isFinite(saved.y) &&
+    // Drop stale coordinates from a monitor that is no longer attached.
+    screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return (
+        saved.x >= a.x - PILL_WIDTH / 2 &&
+        saved.x <= a.x + a.width - PILL_WIDTH / 2 &&
+        saved.y >= a.y - 40 &&
+        saved.y <= a.y + a.height - 40
+      );
+    })
+  ) {
+    win.setPosition(saved.x, saved.y);
+    return;
+  }
+  const { x, y } = defaultPillPosition();
+  win.setPosition(x, y);
+}
+
+function hideStatus() {
+  if (statusWin && !statusWin.isDestroyed() && statusWin.isVisible()) {
+    savePillPosition();
+    statusWin.hide();
+  }
+}
+
+function toggleStatus() {
+  if (statusWin && !statusWin.isDestroyed() && statusWin.isVisible()) {
+    hideStatus();
+    return;
+  }
+  openStatus({ activate: true });
+}
+
+function openStatus({ activate = true, view = null } = {}) {
   if (statusWin && !statusWin.isDestroyed()) {
-    statusWin.show();
-    statusWin.focus();
+    if (activate) {
+      statusWin.show();
+      statusWin.focus();
+    } else if (!statusWin.isVisible()) {
+      statusWin.showInactive();
+    }
+    if (view) pushPill(view, {}, { activate });
     pushStatusRefresh();
     return;
   }
   statusWin = new BrowserWindow({
-    width: 460,
-    height: 640,
-    resizable: true,
+    width: PILL_WIDTH,
+    height: PILL_HEIGHTS.actions,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
     title: "Residence",
-    show: true,
-    vibrancy: "under-window",
-    visualEffectState: "active",
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    alwaysOnTop: true,
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false,
     },
   });
+  // Float above full-screen apps without pulling the user out of their space.
+  statusWin.setAlwaysOnTop(true, "floating");
+  statusWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  applyPillPosition(statusWin);
   statusWin.loadFile(path.join(__dirname, "status.html"));
+
+  statusWin.once("ready-to-show", () => {
+    if (activate) statusWin.show();
+    else statusWin.showInactive();
+    if (view) pushPill(view, {}, { activate });
+  });
+  statusWin.on("moved", savePillPosition);
   statusWin.on("closed", () => {
     statusWin = null;
   });
-}
-
-function openPermission(item) {
-  if (permissionWin && !permissionWin.isDestroyed()) {
-    permissionWin.focus();
-    permissionWin.webContents.send("permission", item);
-    return;
-  }
-  permissionWin = new BrowserWindow({
-    width: 480,
-    height: item?.kind === "contradiction" ? 680 : 620,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    title: "Residence",
-    show: false,
-    alwaysOnTop: true,
-    vibrancy: "sheet",
-    visualEffectState: "active",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  permissionWin.loadFile(path.join(__dirname, "permission.html"));
-  permissionWin.once("ready-to-show", () => {
-    permissionWin.show();
-    permissionWin.focus();
-    permissionWin.webContents.send("permission", item);
-  });
-  permissionWin.on("closed", () => {
-    permissionWin = null;
-  });
-}
-
-function openComposer(draft) {
-  composerDraft = draft;
-  if (composerWin && !composerWin.isDestroyed()) {
-    composerWin.focus();
-    composerWin.webContents.send("composer", draft);
-    return;
-  }
-  composerWin = new BrowserWindow({
-    width: 540,
-    height: 440,
-    resizable: true,
-    minimizable: false,
-    title: "Residence · speak",
-    show: false,
-    alwaysOnTop: true,
-    vibrancy: "sheet",
-    visualEffectState: "active",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  composerWin.loadFile(path.join(__dirname, "composer.html"));
-  composerWin.once("ready-to-show", () => {
-    composerWin.show();
-    composerWin.focus();
-    composerWin.webContents.send("composer", draft);
-  });
-  composerWin.on("closed", () => {
-    composerWin = null;
-    composerDraft = null;
-  });
-}
-
-/** Audio-first capture: mic opens, transcript stays, then Send → Accept destinations. */
-async function openVoiceCapture(seed = {}) {
-  try {
-    if (typeof systemPreferences.askForMediaAccess === "function") {
-      const ok = await systemPreferences.askForMediaAccess("microphone");
-      if (!ok) {
-        showNote(
-          "Residence",
-          "Microphone access needed — System Settings → Privacy & Security → Microphone → Residence.",
-          { force: true }
-        );
-      }
+  // Esc anywhere in the pill puts it away.
+  statusWin.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "Escape") {
+      event.preventDefault();
+      hideStatus();
     }
-  } catch (e) {
-    fileLog(`mic permission ask failed ${e}`);
-  }
-  openComposer({
-    text: seed.text || "",
-    appName: seed.appName || "Voice",
-    source: seed.source || "voice",
-    method: "voice",
-    kind: seed.kind || "speak",
-    voiceFirst: true,
-    title: seed.title || "Speak to Residence",
-    hint:
-      seed.hint ||
-      "Audio first — say what to save and where (Notes, Calendar, Reminders). Text stays to edit.",
   });
 }
 
-async function deliverCapture(row, openReview = true) {
+function openPermission(item, { activate = false } = {}) {
+  // Accept / destination UI lives entirely in the pill.
+  pushPill("decide", { item }, { activate });
+}
+
+/** Typed review/edit step — used for "Edit before send" and manual capture. */
+function openComposer(draft, { activate = true } = {}) {
+  composerDraft = draft;
+  pushPill("compose", { draft }, { activate });
+}
+
+async function deliverCapture(row, openReview = true, { quiet = false } = {}) {
   const { status, json } = await api("POST", "/desktop/capture", {
     text: row.text,
     source: row.source || "macos",
@@ -1034,62 +1095,40 @@ async function deliverCapture(row, openReview = true) {
   const queuedItems = json.queued || [];
   const first = queuedItems[0];
   const queued = queuedItems.length;
-  showCaptureHud({
-    kicker: first?.kind === "contradiction" ? "Contradiction" : "Captured",
-    title: first?.title || "Context understood",
-    body: first?.body || row.text.slice(0, 160),
-    app: lastCaptureMeta?.appName || row.source,
-    method: row.captureMethod,
-    queued,
-  });
-  if (first) {
-    showDecisionNotification(decoratePermission(first, 0, queued), queued);
-  } else {
-    showNote("Residence", `Heard from ${row.source} — no action needed.`);
+  if (!quiet) {
+    showCaptureHud({
+      kicker: first?.kind === "contradiction" ? "Contradiction" : "Captured",
+      title: first?.title || "Context understood",
+      body: first?.body || row.text.slice(0, 160),
+      app: lastCaptureMeta?.appName || row.source,
+      method: row.captureMethod,
+      queued,
+    });
   }
   if (first && openReview) {
     pendingInbox = queuedItems;
     inboxIndex = 0;
-    openPermission(decoratePermission(first, 0, queuedItems.length));
+    // The user just triggered this, so it is fair to take focus for the choice.
+    openPermission(decoratePermission(first, 0, queuedItems.length), { activate: true });
+  } else if (!first) {
+    showToast({ kicker: "Captured", title: "Saved to Facts", body: row.text.slice(0, 120) });
   }
   await pollPending(true);
   return json;
 }
 
+/** New pending items surface only in the pill — no OS notification sheets. */
 function showDecisionNotification(item, relatedCount = 1) {
-  const primary = (item.actionOptions || []).find((o) => o.primary) || (item.actionOptions || [])[0];
-  const when = item.whenLabel ? ` · ${item.whenLabel}` : "";
-  showNote(
-    item.title || "Save this?",
-    `${item.body || item.summary || "Ready to save"}${when}${
-      relatedCount > 1 ? ` · +${relatedCount - 1} more` : ""
-    }`,
-    {
-      actions: [
-        { type: "button", text: primary ? `Save to ${primary.label}` : "Save" },
-        { type: "button", text: "Not now" },
-      ],
-      onClick: () => openPermission(item),
-      onAction: async (_e, index) => {
-        if (index !== 0) {
-          try {
-            await resolvePermission(item.id, false, item, { writeMode: "facts-only" });
-          } catch (err) {
-            fileLog(`notification decline failed ${err}`);
-          }
-          return;
-        }
-        try {
-          await resolvePermission(item.id, true, item, {
-            destination: primary?.destination || item.primaryDestination || "notes",
-            writeMode: primary?.destination || "notes",
-          });
-        } catch (err) {
-          fileLog(`notification action failed ${err}`);
-          openPermission(item);
-        }
-      },
-    }
+  pendingInbox = pendingInbox.length ? pendingInbox : [item];
+  if (!pendingInbox.find((p) => p.id === item.id)) {
+    pendingInbox.unshift(item);
+  }
+  inboxIndex = Math.max(
+    0,
+    pendingInbox.findIndex((p) => p.id === item.id)
+  );
+  openPermission(
+    decoratePermission(item, inboxIndex, Math.max(relatedCount, pendingInbox.length))
   );
 }
 
@@ -1110,13 +1149,29 @@ async function postCapture(text, source, meta = {}) {
   }
 }
 
+let flushingOutbox = false;
+
 async function flushOutbox() {
+  // Polls overlap with slow deliveries; without this guard a queued capture can
+  // be sent twice.
+  if (flushingOutbox) return;
+  flushingOutbox = true;
+  try {
+    await flushOutboxOnce();
+  } finally {
+    flushingOutbox = false;
+  }
+}
+
+async function flushOutboxOnce() {
   const now = Date.now();
   let coreDown = false;
+  let delivered = 0;
   for (const row of loadOutbox().filter((r) => !r.nextRetryAt || r.nextRetryAt <= now)) {
     if (coreDown) break;
     try {
-      await deliverCapture(row, false);
+      await deliverCapture(row, false, { quiet: true });
+      delivered += 1;
       fileLog(`capture delivered ${row.operationId}`);
     } catch (e) {
       const msg = String(e.message || e);
@@ -1132,6 +1187,13 @@ async function flushOutbox() {
         coreDown = true;
       }
     }
+  }
+  if (delivered) {
+    showToast({
+      kicker: "Back online",
+      title: `Sent ${delivered} queued capture${delivered > 1 ? "s" : ""}`,
+      body: "Review them in the inbox.",
+    });
   }
 }
 
@@ -1167,9 +1229,6 @@ async function deliverRecall(body, openReview = true) {
     method: body.image_base64 ? "image-recall" : "text-recall",
     queued: queuedItems.length,
   });
-  if (first) {
-    showDecisionNotification(decoratePermission(first, 0, queuedItems.length), queuedItems.length);
-  }
   if (first && openReview) {
     pendingInbox = queuedItems;
     inboxIndex = 0;
@@ -1201,8 +1260,18 @@ async function recallClipboardImage() {
 
 async function captureSmart() {
   try {
-    // Capture BEFORE any HUD/window — synthetic ⌘C must hit the front app.
-    await new Promise((r) => setTimeout(r, 60));
+    // Always attempt a real front-app capture. The TCC API often returns false
+    // after a re-sign even when Accessibility is ON — gating on it left users
+    // with an empty composer and nothing from the app they were in.
+    //
+    // Hide the pill first so we are not the frontmost process, then let
+    // smartCapture re-activate the last external app (Chrome, WhatsApp, …).
+    if (statusWin && !statusWin.isDestroyed() && statusWin.isVisible()) {
+      statusWin.hide();
+      await new Promise((r) => setTimeout(r, 120));
+    } else {
+      await new Promise((r) => setTimeout(r, 60));
+    }
 
     // Image on clipboard → related Claude/GPT chat recall
     const imagePayload = clipboardImagePayload();
@@ -1245,18 +1314,23 @@ async function captureSmart() {
         });
         return;
       }
-      showCaptureHud({
-        kicker: "Voice",
-        title: "Nothing selected — speak instead",
-        body: "Opening mic. Say what to save and where.",
-        app: result.appName,
-        method: "voice",
+      // If we couldn't even leave Residence, Accessibility is almost certainly
+      // the blocker — tip without trapping the UI.
+      if (!hasAccessibility() || mac.isSelfApp?.(result.appName)) {
+        ensureAccessibility({ reason: "capture-empty", openSettings: false });
+      }
+      showToast({
+        kicker: "Nothing selected",
+        title: `No text found in ${result.appName || "the front app"}`,
+        body: "Select some text in that app, or type it here to save.",
+        tone: "warn",
       });
-      await openVoiceCapture({
+      openComposer({
+        text: "",
         appName: result.appName,
-        source: "voice",
-        title: "Speak to Residence",
-        hint: `No text from ${result.appName}. Speak a request — e.g. save this to Notes.`,
+        source: result.source || "macos",
+        method: "manual",
+        title: `Nothing selected in ${result.appName || "front app"}`,
       });
       return;
     }
@@ -1298,37 +1372,25 @@ async function captureSmart() {
     console.error(e);
     const msg = String(e.message || e).toLowerCase();
     if (msg.includes("not allowed") || msg.includes("accessibility")) {
-      showCaptureHud({
-        kicker: "Permission",
-        title: "Accessibility required",
-        body: "System Settings → Privacy → Accessibility → enable Residence.",
-        app: "Mac",
-        method: "blocked",
-      });
-      showNote(
-        "Residence",
-        "Allow Accessibility for Residence, then retry ⌘⇧R.",
-        { force: true }
-      );
+      ensureAccessibility({ reason: "capture-error" });
       return;
     }
     if (msg.includes("timeout") || msg.includes("econnrefused") || msg.includes("offline")) {
-      showCaptureHud({
+      showToast({
         kicker: "Offline",
-        title: "Core unreachable",
-        body: "Capture queued — start ./scripts/residence-up.sh",
-        app: "Mac",
-        method: "outbox",
+        title: "Capture queued — Core is unreachable",
+        body: "It sends itself as soon as Core is back on :8700.",
+        tone: "warn",
+        ms: 8000,
       });
       notifyOffline();
       return;
     }
-    showCaptureHud({
-      kicker: "Error",
-      title: "Capture failed",
-      body: String(e.message || e).slice(0, 120),
-      app: "Mac",
-      method: "error",
+    showToast({
+      kicker: "Capture failed",
+      title: String(e.message || e).slice(0, 120),
+      tone: "error",
+      ms: 8000,
     });
   }
 }
@@ -1419,6 +1481,12 @@ async function pollPending(forceNotify = false) {
     const pending = json.pending || [];
     pendingInbox = pending;
     if (inboxIndex >= pending.length) inboxIndex = Math.max(0, pending.length - 1);
+    // Forget items that left the queue elsewhere, otherwise this set grows for
+    // the whole life of the process.
+    const liveIds = new Set(pending.map((p) => p.id));
+    for (const id of lastNotifiedIds) {
+      if (!liveIds.has(id)) lastNotifiedIds.delete(id);
+    }
     const groups = new Map();
     for (const item of pending) {
       const key = item.operationId || item.id;
@@ -1449,24 +1517,156 @@ async function pollPending(forceNotify = false) {
 }
 
 function openFirstRun() {
-  if (loadSettings().firstRunDone) return;
-  if (firstRunWin && !firstRunWin.isDestroyed()) {
-    firstRunWin.focus();
-    return;
+  // No separate setup window — the pill is the only surface.
+  const s = loadSettings();
+  if (!s.firstRunDone) {
+    s.firstRunDone = true;
+    saveSettings(s);
   }
-  firstRunWin = new BrowserWindow({
-    width: 480,
-    height: 420,
-    title: "Residence setup",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+  openStatus({ activate: true, view: "actions" });
+  showToast({
+    kicker: "Welcome",
+    title: "⌘⇧R capture · ⌘⇧I inbox",
+    body: "Esc hides the pill. Click the menu-bar R to bring it back.",
+    ms: 9000,
   });
-  firstRunWin.loadFile(path.join(__dirname, "first-run.html"));
-  firstRunWin.on("closed", () => {
-    firstRunWin = null;
+  // Soft tip only — never trap first-run on the Fix bank.
+  setTimeout(
+    () => ensureAccessibility({ reason: "welcome", openSettings: false }),
+    800
+  );
+}
+
+function hasAccessibility() {
+  try {
+    return systemPreferences.isTrustedAccessibilityClient(false);
+  } catch {
+    // If the API is unavailable we cannot know — do not pretend it is granted,
+    // or capture will silently fail later.
+    return false;
+  }
+}
+
+/** Modern System Settings deep links (Ventura → Tahoe). Legacy last. */
+const ACCESSIBILITY_SETTINGS_URLS = [
+  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+];
+
+let accessibilityWatchTimer = null;
+let accessibilityPromptedAt = 0;
+/** User dismissed the nag this session — never steal the pill away again. */
+let accessibilityNagDismissed = false;
+
+function openAccessibilitySettings({ promptApple = false } = {}) {
+  // Only prompt Apple's dialog when explicitly asked. Calling prompt on every
+  // toast click makes macOS look like permission is "missing" even when the
+  // Accessibility toggle already shows Residence ON.
+  if (promptApple) {
+    try {
+      systemPreferences.isTrustedAccessibilityClient(true);
+    } catch {
+      /* fall through */
+    }
+  }
+  const [primary, ...fallbacks] = ACCESSIBILITY_SETTINGS_URLS;
+  shell.openExternal(primary).catch(() => {
+    for (const url of fallbacks) {
+      shell.openExternal(url).catch((e) => {
+        fileLog(`accessibility settings open failed ${url} ${e}`);
+      });
+    }
+  });
+}
+
+/**
+ * Keep watching until Accessibility is granted. Replacing Residence.app often
+ * orphans the old TCC grant (Settings still shows ON, API still returns false).
+ */
+function watchAccessibilityUntilGranted() {
+  if (accessibilityWatchTimer) return;
+  accessibilityWatchTimer = setInterval(() => {
+    if (hasAccessibility()) {
+      clearInterval(accessibilityWatchTimer);
+      accessibilityWatchTimer = null;
+      accessibilityNagDismissed = false;
+      fileLog("accessibility granted");
+      showToast({
+        kicker: "Ready",
+        title: "Accessibility allowed",
+        body: "⌘⇧R can now read the front app.",
+        ms: 5000,
+      });
+      setTrayMenu();
+      if (statusWin && !statusWin.isDestroyed()) {
+        statusWin.webContents.send("status-refresh", { at: Date.now() });
+      }
+    }
+  }, 1500);
+}
+
+/**
+ * Soft Accessibility hint. Never hijacks the pill onto Fix — that was locking
+ * users out of every feature when macOS still returned false after a re-sign
+ * even though Settings already showed Residence as allowed.
+ *
+ * @param {{reason?: string, openSettings?: boolean, force?: boolean}} opts
+ */
+function ensureAccessibility({
+  reason = "capture",
+  openSettings = false,
+  force = false,
+} = {}) {
+  if (hasAccessibility()) return true;
+  if (accessibilityNagDismissed && !force) {
+    fileLog(`accessibility nag skipped reason=${reason}`);
+    return false;
+  }
+
+  showToast({
+    kicker: "Capture tip",
+    title: "macOS still blocks reading apps",
+    body:
+      "Even if Residence looks allowed: Accessibility → Residence → OFF then ON, " +
+      "then quit and reopen Residence. Other features still work — tap Continue.",
+    tone: "warn",
+    ms: 12000,
+    fix: { label: "Open Settings", action: "open-accessibility" },
+    fixSecondary: { label: "Continue", action: "dismiss-accessibility" },
+  });
+
+  const now = Date.now();
+  if (openSettings && now - accessibilityPromptedAt > 8000) {
+    accessibilityPromptedAt = now;
+    openAccessibilitySettings({ promptApple: force || reason === "welcome" });
+  }
+  watchAccessibilityUntilGranted();
+  fileLog(`accessibility needed reason=${reason}`);
+  return false;
+}
+
+function dismissAccessibilityNag() {
+  accessibilityNagDismissed = true;
+  if (accessibilityWatchTimer) {
+    clearInterval(accessibilityWatchTimer);
+    accessibilityWatchTimer = null;
+  }
+  pushPill("actions", {}, { activate: true });
+  showToast({
+    kicker: "OK",
+    title: "Continuing without app capture",
+    body: "Inbox, Save, Prefs, and typed capture still work. ⌘⇧R needs the toggle refresh.",
+    ms: 5000,
+  });
+  fileLog("accessibility nag dismissed");
+  return { ok: true };
+}
+
+function requestAccessibility({ explain = false } = {}) {
+  ensureAccessibility({
+    reason: explain ? "explain" : "request",
+    openSettings: true,
+    force: true,
   });
 }
 
@@ -1509,6 +1709,10 @@ function shapeWritePayload(item, writeMode, destination, extra = {}) {
 async function resolvePermission(id, accept, knownItem = null, opts = {}) {
   let item = knownItem;
   if (!item) {
+    const cached = pendingInbox.find((p) => p.id === id);
+    if (cached) item = cached;
+  }
+  if (!item) {
     try {
       const { json } = await api("GET", "/desktop/pending");
       item = (json.pending || []).find((p) => p.id === id) || null;
@@ -1516,6 +1720,9 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
       /* ignore */
     }
   }
+  // The write path reads whenLabel/summary, which only exist after decoration.
+  // Resolving straight from the pill would otherwise drop the parsed event time.
+  if (item && !item.actionOptions) item = decoratePermission(item);
 
   const writeMode = opts.writeMode || "full";
   const destination =
@@ -1632,35 +1839,25 @@ async function resolvePermission(id, accept, knownItem = null, opts = {}) {
     acceptStack = acceptStack.slice(0, 8);
   }
 
-  showCaptureHud({
-    kicker: accept ? "Saved" : "Skipped",
-    title: accept
-      ? writeMsg
-        ? "Saved & written to Mac"
-        : "Saved to shared Facts"
-      : "Nothing written",
-    body: accept
-      ? `${item?.title || "Done"}${writeMsg}`
-      : "This prompt was dismissed.",
-    app: item?.source || "Residence",
-    method: accept ? "accept" : "decline",
-  });
-  showNote(
-    "Residence",
-    accept
-      ? `Saved${json.factId ? ` (${String(json.factId).slice(0, 8)}…)` : ""}${writeMsg || " · Facts only"} · ⌘⇧Z to undo`
-      : "Declined — nothing written.",
-    { force: true }
-  );
-  await pollPending(true);
-  if (permissionWin && !permissionWin.isDestroyed()) {
-    if (pendingInbox.length) {
-      inboxShowCurrent();
-    } else {
-      permissionWin.close();
-    }
+  if (accept) {
+    flashSaved({
+      title: item?.title || "Saved",
+      body: writeMsg ? `Shared context updated${writeMsg}` : "Added to your shared context",
+    });
+  } else {
+    showToast({
+      kicker: "Not saved",
+      title: item?.title || "Skipped",
+      body: "Nothing changed in your shared context.",
+    });
   }
-  return { ...json, writeBack: writeMsg };
+  await pollPending(true);
+  if (pendingInbox.length) {
+    inboxShowCurrent({ activate: false });
+  } else {
+    pushPill("actions", {});
+  }
+  return { ...json, writeBack: writeMsg, advanced: true };
 }
 
 const briefingStatePath = () =>
@@ -1762,13 +1959,95 @@ function scheduleMorningBriefing() {
   }, 12_000);
 }
 
+async function collectDiagnostics() {
+  const rows = [];
+  const mark = (ok) => (ok ? "OK  " : "FAIL");
+
+  let coreDetail = "unreachable";
+  let coreUp = false;
+  let datahub = false;
+  try {
+    const { status, json } = await api("GET", "/ready");
+    coreUp = status < 500 && json?.core !== false;
+    datahub = !!json?.datahub;
+    coreDetail = `${CORE} · datahub=${datahub ? "up" : "down"}`;
+  } catch (e) {
+    coreDetail = `${CORE} · ${String(e.message || e)}`;
+  }
+  rows.push([mark(coreUp), "Core API", coreDetail]);
+  rows.push([
+    mark(datahub),
+    "DataHub",
+    datahub ? "reachable via Core" : "Core cannot reach GMS — Accept will fail",
+  ]);
+
+  const ax = hasAccessibility();
+  rows.push([
+    mark(ax),
+    "Accessibility",
+    ax ? "granted — ⌘⇧R can read the front app" : "missing — capture from apps will not work",
+  ]);
+
+  rows.push([
+    mark(failedHotkeys.length === 0),
+    "Hotkeys",
+    failedHotkeys.length ? `conflict: ${failedHotkeys.join(", ")}` : "all 6 registered",
+  ]);
+
+  rows.push([
+    mark(Notification.isSupported()),
+    "Notifications",
+    Notification.isSupported() ? "available" : "unsupported on this Mac",
+  ]);
+
+  const outbox = loadOutbox();
+  const retries = loadWritebackRetries();
+  rows.push([
+    mark(outbox.length === 0),
+    "Capture outbox",
+    outbox.length ? `${outbox.length} queued (Core was offline)` : "empty",
+  ]);
+  rows.push([
+    mark(retries.length === 0),
+    "Write-back queue",
+    retries.length ? `${retries.length} failed write(s) to retry` : "empty",
+  ]);
+
+  return rows;
+}
+
+async function showDiagnostics() {
+  showToast({ kicker: "Diagnostics", title: "Running checks…", ms: 8000 });
+  const rows = await collectDiagnostics();
+  const failures = rows.filter(([status]) => status.startsWith("FAIL"));
+  const detail = rows.map(([status, name, note]) => `${status}  ${name} — ${note}`).join("\n");
+  fileLog(`diagnostics\n${detail}`);
+  const { response } = await dialog.showMessageBox({
+    type: failures.length ? "warning" : "info",
+    title: "Residence diagnostics",
+    message: failures.length
+      ? `${failures.length} check${failures.length > 1 ? "s" : ""} need attention`
+      : "Everything checks out",
+    detail,
+    buttons: failures.length ? ["Close", "Copy report", "Open log"] : ["Close", "Copy report"],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response === 1) clipboard.writeText(detail);
+  if (response === 2) shell.showItemInFolder(logPath());
+  showToast({
+    kicker: "Diagnostics",
+    title: failures.length ? `${failures.length} issue(s)` : "All clear",
+    tone: failures.length ? "warn" : "info",
+  });
+}
+
 function handleProtocolUrl(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== "residence:") return;
     const host = u.hostname || u.pathname.replace(/^\//, "");
     if (host === "capture") captureSmart();
-    else if (host === "voice" || host === "speak") openVoiceCapture();
     else if (host === "inbox") openInbox();
     else if (host === "status") openStatus();
     else if (host === "briefing") runMorningBriefing({ force: true });
@@ -1790,7 +2069,15 @@ function registerIpc() {
   );
 
   ipcMain.handle("close-permission", () => {
-    if (permissionWin && !permissionWin.isDestroyed()) permissionWin.close();
+    pushPill("actions", {});
+  });
+  ipcMain.handle("hide-pill", () => {
+    hideStatus();
+    return { ok: true };
+  });
+  ipcMain.handle("pill-resize", (_e, bank) => {
+    sizePill(bank);
+    return { ok: true };
   });
 
   ipcMain.handle("get-status", async () => {
@@ -1803,9 +2090,14 @@ function registerIpc() {
     const settings = loadSettings();
     let accessibility = "unknown";
     try {
-      accessibility = systemPreferences.isTrustedAccessibilityClient(false)
-        ? "granted"
-        : "needs_action";
+      if (systemPreferences.isTrustedAccessibilityClient(false)) {
+        accessibility = "granted";
+      } else if (accessibilityNagDismissed) {
+        // User chose Continue — do not keep a yellow Fix-bank trap.
+        accessibility = "dismissed";
+      } else {
+        accessibility = "needs_action";
+      }
     } catch {
       /* macOS only API */
     }
@@ -1869,27 +2161,18 @@ function registerIpc() {
     const draft = composerDraft || lastCaptureMeta || { source: "macos", method: "composer" };
     const clean = String(text || "").trim();
     if (!clean) throw new Error("empty capture");
-    if (composerWin && !composerWin.isDestroyed()) composerWin.close();
-    const voice = draft.method === "voice" || draft.voiceFirst;
-    await postCapture(clean, voice ? "voice" : draft.source || "macos", {
+    await postCapture(clean, draft.source || "macos", {
       ...draft,
-      method: voice ? "voice" : draft.method || "composer",
+      method: draft.method || "composer",
       text: clean,
     });
     return { ok: true };
   });
   ipcMain.handle("composer-cancel", () => {
-    if (composerWin && !composerWin.isDestroyed()) composerWin.close();
-    showCaptureHud({
-      kicker: "Cancelled",
-      title: "Capture discarded",
-      body: "Nothing was sent to Residence.",
-      app: "Mac",
-      method: "composer",
-    });
+    showToast({ kicker: "Discarded", title: "Draft cleared" });
+    pushPill("actions", {});
     return { ok: true };
   });
-  ipcMain.handle("open-voice", () => openVoiceCapture());
   ipcMain.handle("retry-writeback", async (_e, operationId) => {
     const rows = loadWritebackRetries();
     const row = rows.find((r) => r.operationId === operationId);
@@ -1967,8 +2250,7 @@ function registerIpc() {
     }
     if (opts.morningBriefing !== false) s.morningBriefing = true;
     saveSettings(s);
-    if (firstRunWin && !firstRunWin.isDestroyed()) firstRunWin.close();
-    openStatus();
+    openStatus({ activate: true, view: "actions" });
     setTrayMenu();
     scheduleMorningBriefing();
     if (opts.importCalendar) {
@@ -1977,15 +2259,18 @@ function registerIpc() {
     return { ok: true };
   });
   ipcMain.handle("openPrivacy", () => {
-    try {
-      systemPreferences.isTrustedAccessibilityClient(true);
-    } catch {
-      /* handled by the Settings deep-link below */
-    }
-    shell.openExternal(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    );
+    // Open Settings only — do NOT re-enter ensureAccessibility (that used to
+    // re-show the toast and trap the user in a Fix-bank loop).
+    openAccessibilitySettings({ promptApple: true });
+    watchAccessibilityUntilGranted();
+    return { ok: true };
   });
+  ipcMain.handle("open-accessibility", () => {
+    openAccessibilitySettings({ promptApple: false });
+    watchAccessibilityUntilGranted();
+    return { ok: true };
+  });
+  ipcMain.handle("dismiss-accessibility", () => dismissAccessibilityNag());
   ipcMain.handle("undo-last", () => undoLastAccept());
   ipcMain.handle("fetch-activity", async () => {
     try {
@@ -2020,7 +2305,7 @@ app.on("open-url", (event, url) => {
   handleProtocolUrl(url);
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
       const allow = [
@@ -2038,6 +2323,19 @@ app.whenReady().then(() => {
     });
   } catch (e) {
     fileLog(`session permission handlers failed ${e}`);
+  }
+
+  if (SELFTEST) {
+    const rows = await collectDiagnostics();
+    const failed = rows.filter(([s]) => s.startsWith("FAIL"));
+    for (const [state, name, note] of rows) {
+      process.stdout.write(`${state}  ${name.padEnd(16)} ${note}\n`);
+    }
+    process.stdout.write(
+      `\n${rows.length - failed.length}/${rows.length} checks passed\n`
+    );
+    app.exit(failed.length ? 1 : 0);
+    return;
   }
 
   registerIpc();
@@ -2068,7 +2366,6 @@ app.whenReady().then(() => {
 
   failedHotkeys = [];
   const hotkeys = [
-    [HOTKEY_VOICE, () => openVoiceCapture()],
     [HOTKEY, () => captureSmart()],
     [HOTKEY_CLIP, () => captureClipboard()],
     [HOTKEY_ACCEPT, () => resolveTopPending(true)],
@@ -2091,18 +2388,28 @@ app.whenReady().then(() => {
   }
 
   if (!settings.firstRunDone) openFirstRun();
-  else openStatus();
+  else openStatus({ activate: false });
+
+  // Soft tip only after updates. Never force Fix bank — a false-negative from
+  // macOS after re-signing used to lock users out of every feature.
+  setTimeout(() => {
+    if (!hasAccessibility()) {
+      ensureAccessibility({ reason: "boot", openSettings: false });
+    }
+  }, 1200);
 
   pollPending();
   schedulePoll();
   scheduleMorningBriefing();
+  // Remember which app the user is in so Capture from the pill still targets it.
+  if (!frontmostTracker) frontmostTracker = mac.startFrontmostTracker(1000);
 
   const bootUrl = process.argv.find((a) => String(a).startsWith("residence://"));
   if (bootUrl) handleProtocolUrl(bootUrl);
 
   showNote(
     "Residence",
-    "Menu-bar agent · ⌘⇧M speak · ⌘⇧R capture · ⌘⇧I inbox"
+    "Menu-bar agent · ⌘⇧R capture · ⌘⇧I inbox"
   );
 });
 
@@ -2110,6 +2417,14 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   if (pollTimer) clearInterval(pollTimer);
   if (briefingWatchTimer) clearInterval(briefingWatchTimer);
+  if (frontmostTracker) {
+    clearInterval(frontmostTracker);
+    frontmostTracker = null;
+  }
+  if (accessibilityWatchTimer) {
+    clearInterval(accessibilityWatchTimer);
+    accessibilityWatchTimer = null;
+  }
 });
 
 app.on("window-all-closed", (e) => {

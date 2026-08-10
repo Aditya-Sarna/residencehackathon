@@ -438,4 +438,76 @@ export const api = {
         channelUrl: string;
       }>;
     }>(`/youtube/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  desktopCapture: (body: {
+    text: string;
+    source?: string;
+    operation_id?: string;
+    capture_method?: string;
+    consent_mode?: string;
+  }) =>
+    req<{
+      ok: boolean;
+      duplicate?: boolean;
+      operationId: string;
+      utterance?: string;
+      contradictions?: unknown[];
+      queued: DesktopPermission[];
+      pendingCount: number;
+    }>("/desktop/capture", { method: "POST", body: JSON.stringify(body) }),
+
+  desktopPending: (status = "pending", limit = 50) =>
+    req<{
+      ok: boolean;
+      pending: DesktopPermission[];
+      status: string;
+      offset: number;
+      limit: number;
+    }>(`/desktop/pending?status=${encodeURIComponent(status)}&limit=${limit}`, undefined, 1),
+
+  desktopResolve: (body: {
+    id: string;
+    accept: boolean;
+    destination?: "calendar" | "notes" | "reminders" | "facts-only" | null;
+  }) =>
+    req<{
+      ok: boolean;
+      status: string;
+      id: string;
+      actionApp?: string;
+      factId?: string;
+      idempotent?: boolean;
+    }>("/desktop/resolve", { method: "POST", body: JSON.stringify(body) }),
+
+  desktopActivity: (limit = 40) =>
+    req<{
+      ok: boolean;
+      items?: Array<Record<string, unknown>>;
+      activity?: Array<Record<string, unknown>>;
+    }>(`/desktop/activity?limit=${limit}`, undefined, 1),
+
+  desktopUndo: (body: { fact_id: string; permission_id?: string | null; operation_id?: string | null }) =>
+    req<{ ok: boolean; factId: string; status: string }>("/desktop/undo", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+export type DesktopPermission = {
+  id: string;
+  createdAt?: string;
+  status?: string;
+  kind?: string;
+  source?: string;
+  operationId?: string;
+  captureMethod?: string;
+  consentMode?: string;
+  title?: string;
+  body?: string;
+  actionApp?: string;
+  payload?: Record<string, unknown>;
+  utterance?: string;
+  fromLabel?: string;
+  factId?: string;
+  destination?: string;
 };

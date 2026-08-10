@@ -2,315 +2,985 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';"
+    />
     <title>Residence</title>
     <style>
       :root {
-        --bg: #f5f0e8;
-        --ink: #111;
-        --muted: #6b655c;
-        --line: #d9d2c5;
+        --pill: #111;
+        --ink: #f4f2ee;
+        --dim: rgba(244, 242, 238, 0.36);
+        --line: rgba(244, 242, 238, 0.22);
+        --warn: #f0b429;
+        --bad: #e5534b;
+        --accept: #1f7a45;
+        --accept-ink: #eafff1;
+        --decline: #b42318;
+        --decline-ink: #fff5f4;
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--ink);
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
         -webkit-font-smoothing: antialiased;
-      }
-      main { padding: 22px 24px 28px; }
-      .brand {
-        margin: 0 0 8px;
-        font-size: 11px;
-        letter-spacing: 0.18em;
-        font-weight: 700;
-      }
-      h1 {
-        margin: 0 0 6px;
-        font-size: 22px;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-      }
-      .lead {
-        margin: 0 0 18px;
-        font-size: 13px;
-        color: var(--muted);
-        line-height: 1.4;
-      }
-      .row {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 16px;
-        flex-wrap: wrap;
-      }
-      button {
-        font: inherit;
-        font-size: 12px;
-        font-weight: 600;
-        border: 1px solid var(--ink);
-        padding: 8px 12px;
-        cursor: pointer;
-        background: var(--ink);
-        color: var(--bg);
-      }
-      button.ghost {
-        background: transparent;
         color: var(--ink);
+        user-select: none;
       }
-      .meta {
-        font-size: 11px;
-        color: var(--muted);
-        margin: 0 0 14px;
-      }
-      ul {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        border-top: 1px solid var(--line);
-      }
-      li {
+      .wrap { position: relative; width: 100%; height: 100%; }
+      .pill {
+        -webkit-app-region: drag;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: var(--pill);
+        border-radius: 999px;
+        padding: 12px 16px 14px;
         display: grid;
-        grid-template-columns: 1fr auto;
+        grid-template-columns: 62px minmax(0, 1fr) 70px;
         gap: 8px;
-        padding: 12px 0;
-        border-bottom: 1px solid var(--line);
-        align-items: start;
-      }
-      li strong {
-        display: block;
-        font-size: 13px;
-        font-weight: 600;
-      }
-      li span {
-        display: block;
-        font-size: 11px;
-        color: var(--muted);
-        margin-top: 3px;
-        line-height: 1.35;
-      }
-      .section {
-        margin: 22px 0 8px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-      }
-      .diag {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin: 10px 0;
-      }
-      .diag span {
-        border: 1px solid var(--line);
-        padding: 5px 7px;
-        font-size: 10px;
-      }
-      .diag .bad { border-color: var(--ink); font-weight: 700; }
-      select {
-        font: inherit;
-        font-size: 10px;
-        border: 1px solid var(--line);
-        background: transparent;
-        padding: 4px;
-      }
-      .recovery {
-        font-size: 11px;
-        padding: 10px 0;
-        border-bottom: 1px solid var(--line);
-      }
-      .prefs label {
-        display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        margin: 0 0 8px;
-        cursor: pointer;
+        overflow: hidden;
+      }
+      .pill button, .pill .hit, .pill textarea { -webkit-app-region: no-drag; }
+      .orb {
+        width: 56px; height: 56px; border-radius: 50%;
+        border: 1px solid var(--line); display: grid; place-items: center;
+        justify-self: center; position: relative; cursor: pointer;
+        background: transparent; color: var(--ink); font: inherit;
+      }
+      .orb.on { border-color: rgba(244, 242, 238, 0.85); }
+      .orb::after {
+        content: ""; position: absolute; top: 3px; left: 50%;
+        width: 5px; height: 5px; border-radius: 50%;
+        background: currentColor; transform: translateX(-50%);
+      }
+      .orb span { font-size: 18px; font-weight: 500; letter-spacing: -0.03em; }
+      .mid { min-width: 0; display: flex; flex-direction: column; gap: 3px; position: relative; }
+      .bank { display: flex; gap: 2px; padding-left: 6px; flex-wrap: wrap; }
+      .bank button {
+        border: 0; background: transparent; color: var(--dim);
+        font: inherit; font-size: 8px; letter-spacing: 0.12em;
+        text-transform: uppercase; cursor: pointer; padding: 2px 5px;
+        border-radius: 999px;
+      }
+      .bank button.on { color: var(--ink); border: 1px solid var(--line); }
+      .bank button .dot {
+        display: inline-block; width: 4px; height: 4px; border-radius: 50%;
+        background: var(--warn); margin-left: 4px; vertical-align: middle;
+      }
+      .context {
+        display: none; padding-left: 6px; font-size: 10px; line-height: 1.3;
+        color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .context.on { display: block; }
+      .context b { color: var(--ink); font-weight: 500; }
+      .list {
+        display: flex; flex-direction: column; gap: 1px;
+        max-height: 78px; overflow: hidden;
+      }
+      .list button {
+        border: 1px solid transparent; background: transparent; color: var(--dim);
+        font: inherit; font-size: 12px; text-align: left; padding: 4px 8px;
+        border-radius: 999px; cursor: pointer; display: flex;
+        align-items: center; justify-content: space-between; gap: 6px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .list button:hover { color: var(--ink); }
+      .list button.on {
+        color: var(--ink); border-color: var(--line);
+        background: rgba(244, 242, 238, 0.06);
+      }
+      .list button.on::after {
+        content: ""; width: 5px; height: 5px; border-radius: 50%;
+        background: var(--ink); flex: 0 0 auto;
+      }
+      .list button.info {
+        cursor: default; color: var(--dim); font-style: italic;
+      }
+      .list button.info:hover { color: var(--dim); }
+      .list .meta {
+        font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--dim); margin-right: 2px;
+      }
+      .switch {
+        width: 26px; height: 14px; border-radius: 999px; flex: 0 0 auto;
+        background: rgba(244, 242, 238, 0.14); border: 1px solid var(--line);
+        position: relative; display: inline-block; transition: background 0.15s var(--ease),
+        border-color 0.15s var(--ease);
+      }
+      .switch.on { background: var(--accept); border-color: var(--accept); }
+      .switch .knob {
+        position: absolute; top: 1px; left: 1px; width: 10px; height: 10px; border-radius: 50%;
+        background: var(--dim); transition: transform 0.15s var(--ease), background 0.15s var(--ease);
+      }
+      .switch.on .knob { transform: translateX(12px); background: var(--accept-ink); }
+      .compose-box { display: none; width: 100%; flex-direction: column; gap: 4px; }
+      .compose-box.on { display: flex; }
+      .compose-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding-left: 2px;
+      }
+      .compose-hint {
+        font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim);
+      }
+      .compose-cancel {
+        border: 0; background: transparent; color: var(--dim); font: inherit;
+        font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+        padding: 2px 4px;
+      }
+      .compose-cancel:hover { color: var(--ink); }
+      .compose-box textarea {
+        width: 100%; height: 96px; resize: none; border: 1px solid var(--line);
+        border-radius: 14px; background: rgba(244, 242, 238, 0.04);
+        color: var(--ink); font: inherit; font-size: 12px; line-height: 1.35;
+        padding: 8px 10px; outline: none; user-select: text;
+      }
+      .compose-box textarea:focus { border-color: rgba(244, 242, 238, 0.5); }
+      .dial {
+        text-align: center; display: flex; flex-direction: column;
+        align-items: center; gap: 2px; -webkit-app-region: no-drag;
+      }
+      .dial .lab {
+        font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
+      }
+      .dial .val {
+        border: 0; background: transparent; color: var(--ink); font: inherit;
+        font-size: 22px; font-weight: 500; letter-spacing: -0.03em; line-height: 1;
+        cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 2px;
+      }
+      .dial .val i {
+        width: 5px; height: 5px; border-radius: 50%; background: var(--ink);
+      }
+      .dial .hint {
+        font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase;
+        color: var(--dim); max-width: 68px; line-height: 1.2;
+      }
+      .dial-default { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .dial-default.hide { display: none; }
+      /* Accept / Decline: two unmistakable tick/cross circles, not small text. */
+      .dial-decide {
+        display: none; flex-direction: column; align-items: center; gap: 6px;
+        -webkit-app-region: no-drag;
+      }
+      .dial-decide.on { display: flex; }
+      .circle {
+        width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: transform 0.12s var(--ease), filter 0.12s var(--ease);
+      }
+      .circle:hover { filter: brightness(1.12); }
+      .circle:active { transform: scale(0.88); }
+      .circle svg {
+        width: 15px; height: 15px; fill: none; stroke-width: 2.6;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+      .circle.accept { background: var(--accept); }
+      .circle.accept svg { stroke: var(--accept-ink); }
+      .circle.decline { background: var(--decline); }
+      .circle.decline svg { stroke: var(--decline-ink); }
+      .dial-decide .hint {
+        font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase;
+        color: var(--dim); max-width: 68px; line-height: 1.2; text-align: center;
+      }
+      .grab {
+        position: absolute; left: 50%; bottom: 7px; width: 26px; height: 2px;
+        border-radius: 2px; background: rgba(244, 242, 238, 0.45);
+        transform: translateX(-50%); pointer-events: none;
+      }
+      .list-wrap.hide { display: none; }
+
+      /* Toasts own their own layer so a routine status refresh cannot wipe them. */
+      .toast {
+        position: absolute; inset: 0; display: none;
+        flex-direction: column; justify-content: center; gap: 1px;
+        padding: 4px 8px; border-radius: 16px;
+        background: rgba(17, 17, 17, 0.96);
+        -webkit-app-region: no-drag;
+      }
+      .toast.on { display: flex; }
+      .toast .kicker {
+        font-size: 8px; letter-spacing: 0.14em; text-transform: uppercase;
+        color: var(--dim);
+      }
+      .toast.warn .kicker { color: var(--warn); }
+      .toast.error .kicker { color: var(--bad); }
+      .toast .title {
+        font-size: 12px; line-height: 1.25; color: var(--ink);
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .toast .body {
+        font-size: 10px; line-height: 1.3; color: var(--dim);
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .toast .fix-row {
+        display: none; gap: 6px; margin-top: 4px; flex-wrap: wrap;
+      }
+      .toast .fix-row.on { display: flex; }
+      .toast .fix {
+        border: 1px solid var(--line);
+        background: transparent; color: var(--ink); font: inherit; font-size: 9px;
+        letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px;
+        border-radius: 999px; cursor: pointer;
+      }
+      .toast .fix.primary {
+        background: rgba(244, 242, 238, 0.12);
+      }
+
+      /* Full-pill green confirmation, played the instant a capture is saved. */
+      .saved-flash {
+        position: absolute; inset: 0; border-radius: 999px;
+        background: linear-gradient(135deg, #1f8a4f, #14532f);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 5px; opacity: 0; transform: scale(0.94);
+        transition: opacity 0.22s var(--ease), transform 0.22s var(--ease);
+        pointer-events: none; z-index: 6; -webkit-app-region: no-drag;
+      }
+      .saved-flash.on { opacity: 1; transform: scale(1); pointer-events: auto; }
+      .saved-flash .check { width: 34px; height: 34px; }
+      .saved-flash .check-circle {
+        fill: none; stroke: #eafff1; stroke-width: 3;
+        stroke-dasharray: 152; stroke-dashoffset: 152;
+        transition: stroke-dashoffset 0.45s var(--ease) 0.05s;
+      }
+      .saved-flash .check-mark {
+        fill: none; stroke: #eafff1; stroke-width: 4.5;
+        stroke-linecap: round; stroke-linejoin: round;
+        stroke-dasharray: 36; stroke-dashoffset: 36;
+        transition: stroke-dashoffset 0.3s var(--ease) 0.4s;
+      }
+      .saved-flash.on .check-circle { stroke-dashoffset: 0; }
+      .saved-flash.on .check-mark { stroke-dashoffset: 0; }
+      .saved-flash .saved-title {
+        color: #eafff1; font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+      }
+      .saved-flash .saved-body {
+        color: rgba(234, 255, 241, 0.82); font-size: 10px; max-width: 82%;
+        text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
     </style>
   </head>
   <body>
-    <main>
-      <p class="brand">RESIDENCE</p>
-      <h1>Mac agent</h1>
-      <p class="lead">
-        Speak first · Accept writes to Mac apps · inbox · quiet hours.
-      </p>
-      <div class="row">
-        <button type="button" id="speak">Speak (⌘⇧M)</button>
-        <button type="button" class="ghost" id="capture">Capture (⌘⇧R)</button>
-        <button type="button" class="ghost" id="inbox">Inbox (⌘⇧I)</button>
-        <button type="button" class="ghost" id="undo">Undo (⌘⇧Z)</button>
-        <button type="button" class="ghost" id="phone">Phone UI</button>
+    <div class="wrap">
+      <div class="pill">
+        <button type="button" class="orb hit" id="orb" title="Core status · refresh">
+          <span>R</span>
+        </button>
+        <div class="mid">
+          <div class="bank hit" id="banks">
+            <button type="button" data-bank="actions" class="on">Do</button>
+            <button type="button" data-bank="decide">Save</button>
+            <button type="button" data-bank="apps">Apps</button>
+            <button type="button" data-bank="prefs">Prefs</button>
+            <button type="button" data-bank="fix">Fix<span class="dot" id="fixDot" hidden></span></button>
+          </div>
+          <div class="context hit" id="context"></div>
+          <div class="list-wrap hit" id="listWrap">
+            <div class="list" id="list"></div>
+          </div>
+          <div class="compose-box hit" id="composeBox">
+            <div class="compose-head">
+              <span class="compose-hint" id="composeHint">New capture</span>
+              <button type="button" class="compose-cancel" id="composeCancel">Discard</button>
+            </div>
+            <textarea
+              id="composeText"
+              placeholder="Type what to save…"
+              spellcheck="false"
+            ></textarea>
+          </div>
+          <div class="toast hit" id="toast">
+            <div class="kicker" id="toastKicker"></div>
+            <div class="title" id="toastTitle"></div>
+            <div class="body" id="toastBody"></div>
+            <div class="fix-row" id="toastFixRow">
+              <button type="button" class="fix primary" id="toastFix"></button>
+              <button type="button" class="fix" id="toastFixSecondary"></button>
+            </div>
+          </div>
+        </div>
+        <div class="dial">
+          <div class="dial-default" id="dialDefault">
+            <div class="lab" id="dialLab">Pend</div>
+            <button type="button" class="val hit" id="dialBtn">
+              <span id="dialVal">00</span><i></i>
+            </button>
+            <div class="hint" id="dialHint">idle</div>
+          </div>
+          <div class="dial-decide hit" id="dialDecide">
+            <button type="button" class="circle accept" id="acceptCircle" title="Accept">
+              <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
+            </button>
+            <button type="button" class="circle decline" id="declineCircle" title="Decline">
+              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <div class="hint" id="decideHint">1/2</div>
+          </div>
+        </div>
+        <div class="saved-flash" id="savedFlash">
+          <svg viewBox="0 0 52 52" class="check">
+            <circle class="check-circle" cx="26" cy="26" r="23" />
+            <path class="check-mark" d="M14 27 l8.5 8.5 L39 18" />
+          </svg>
+          <div class="saved-title" id="savedTitle">Saved</div>
+          <div class="saved-body" id="savedBody"></div>
+        </div>
       </div>
-      <p class="meta" id="meta">Checking…</p>
-      <div class="diag" id="diagnostics"></div>
-      <p class="section">Agent preferences</p>
-      <div class="prefs" id="prefs"></div>
-      <p class="section">Live activity</p>
-      <div id="activity"></div>
-      <p class="section">Capture and write-back policies</p>
-      <ul id="list"></ul>
-      <p class="section">Recovery</p>
-      <div id="recovery"></div>
-      <p class="meta" style="margin-top:16px">
-        residence://voice · residence://capture · residence://inbox · ⌘⇧M speak · ⌘⇧R/C/A/D/I/Z
-      </p>
-    </main>
+      <div class="grab"></div>
+    </div>
     <script>
-      const list = document.getElementById("list");
-      const meta = document.getElementById("meta");
-      const diagnostics = document.getElementById("diagnostics");
-      const prefs = document.getElementById("prefs");
-      const recovery = document.getElementById("recovery");
-      const activity = document.getElementById("activity");
+      let status = null;
+      let bank = "actions";
+      let selectedKey = "capture";
+      let appFocus = null;
+      let decideItem = null;
+      /** Set while main is pushing the next inbox item so we do not double-fetch. */
+      let awaitingInboxPush = false;
 
-      document.getElementById("speak").onclick = () => window.residence.openVoice();
-      document.getElementById("capture").onclick = () => window.residence.captureSmart();
-      document.getElementById("inbox").onclick = () => window.residence.openInbox();
-      document.getElementById("phone").onclick = () => window.residence.openPhone();
-      document.getElementById("undo").onclick = async () => {
-        await window.residence.undoLast();
-        refresh();
-      };
+      const listEl = document.getElementById("list");
+      const listWrap = document.getElementById("listWrap");
+      const contextEl = document.getElementById("context");
+      const composeBox = document.getElementById("composeBox");
+      const composeText = document.getElementById("composeText");
+      const composeHint = document.getElementById("composeHint");
+      const composeCancel = document.getElementById("composeCancel");
+      const orb = document.getElementById("orb");
+      const dialDefault = document.getElementById("dialDefault");
+      const dialLab = document.getElementById("dialLab");
+      const dialVal = document.getElementById("dialVal");
+      const dialHint = document.getElementById("dialHint");
+      const dialBtn = document.getElementById("dialBtn");
+      const dialDecideEl = document.getElementById("dialDecide");
+      const acceptCircle = document.getElementById("acceptCircle");
+      const declineCircle = document.getElementById("declineCircle");
+      const decideHint = document.getElementById("decideHint");
+      const fixDot = document.getElementById("fixDot");
+      const toastEl = document.getElementById("toast");
+      const toastKicker = document.getElementById("toastKicker");
+      const toastTitle = document.getElementById("toastTitle");
+      const toastBody = document.getElementById("toastBody");
+      const toastFixRow = document.getElementById("toastFixRow");
+      const toastFix = document.getElementById("toastFix");
+      const toastFixSecondary = document.getElementById("toastFixSecondary");
+      const savedFlash = document.getElementById("savedFlash");
+      const savedTitle = document.getElementById("savedTitle");
+      const savedBody = document.getElementById("savedBody");
 
-      function el(name, cls, text) {
-        const n = document.createElement(name);
-        if (cls) n.className = cls;
-        if (text) n.textContent = text;
-        return n;
+      const ACTIONS = [
+        { key: "capture", label: "Capture", run: () => window.residence.captureSmart() },
+        { key: "inbox", label: "Inbox", run: () => openInboxOnce() },
+        { key: "undo", label: "Undo", run: () => window.residence.undoLast() },
+      ];
+      const PREFS = [
+        { key: "confirmCapture", label: "Edit before send", pref: true },
+        { key: "openAtLogin", label: "Open at login", pref: true },
+        { key: "showDock", label: "Show Dock", pref: true },
+        { key: "quietHours", label: "Quiet hours", pref: true },
+      ];
+
+      // --- toasts ---------------------------------------------------------
+
+      let toastTimer = null;
+
+      function runToastAction(action) {
+        if (!action) return;
+        if (action === "open-accessibility") void window.residence.openAccessibility();
+        else if (action === "open-privacy") void window.residence.openPrivacy();
+        else if (action === "dismiss-accessibility") void window.residence.dismissAccessibility();
       }
 
-      function prefToggle(label, key, checked) {
-        const wrap = el("label");
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.checked = !!checked;
-        input.onchange = async () => {
-          await window.residence.setPref(key, input.checked);
-          refresh();
-        };
-        wrap.append(input, document.createTextNode(label));
-        return wrap;
+      function showToast({
+        kicker,
+        title,
+        body,
+        tone = "info",
+        ms = 3500,
+        fix = null,
+        fixSecondary = null,
+      }) {
+        clearTimeout(toastTimer);
+        toastEl.className = `toast hit on${tone === "info" ? "" : ` ${tone}`}`;
+        toastKicker.textContent = kicker || "";
+        toastTitle.textContent = title || "";
+        toastBody.textContent = body || "";
+        const hasFix = !!(fix && (fix.label || fix.run));
+        const hasSecondary = !!(fixSecondary && fixSecondary.label);
+        toastFixRow.className = `fix-row${hasFix || hasSecondary ? " on" : ""}`;
+        if (hasFix) {
+          toastFix.textContent = fix.label || "Fix";
+          toastFix.hidden = false;
+          toastFix.onclick = (e) => {
+            e.stopPropagation();
+            if (typeof fix.run === "function") fix.run();
+            else runToastAction(fix.action);
+            hideToast();
+          };
+        } else {
+          toastFix.hidden = true;
+          toastFix.onclick = null;
+        }
+        if (hasSecondary) {
+          toastFixSecondary.textContent = fixSecondary.label;
+          toastFixSecondary.hidden = false;
+          toastFixSecondary.onclick = (e) => {
+            e.stopPropagation();
+            runToastAction(fixSecondary.action);
+            hideToast();
+          };
+        } else {
+          toastFixSecondary.hidden = true;
+          toastFixSecondary.onclick = null;
+        }
+        if (ms > 0) toastTimer = setTimeout(hideToast, ms);
+      }
+
+      function hideToast() {
+        clearTimeout(toastTimer);
+        toastEl.className = "toast hit";
+      }
+
+      toastEl.onclick = (e) => {
+        if (e.target === toastFix || e.target === toastFixSecondary) return;
+        hideToast();
+      };
+
+      // --- saved flash ------------------------------------------------------
+
+      let savedTimer = null;
+
+      function showSaved({ title, body } = {}) {
+        clearTimeout(savedTimer);
+        savedFlash.classList.remove("on");
+        // Force a reflow so the checkmark redraws even if it is still visible
+        // from a capture that landed a moment ago.
+        void savedFlash.offsetWidth;
+        savedTitle.textContent = title || "Saved";
+        savedBody.textContent = body || "";
+        requestAnimationFrame(() => savedFlash.classList.add("on"));
+        savedTimer = setTimeout(() => savedFlash.classList.remove("on"), 1600);
+      }
+
+      window.residence.onSaved((msg) => showSaved(msg || {}));
+
+      // --- banks ----------------------------------------------------------
+
+      function setBank(next, opts = {}) {
+        bank = next;
+        document.querySelectorAll("#banks button").forEach((b) => {
+          b.classList.toggle("on", b.dataset.bank === bank);
+        });
+        const composing = bank === "compose";
+        composeBox.classList.toggle("on", composing);
+        listWrap.classList.toggle("hide", composing);
+        contextEl.classList.toggle("on", bank === "decide");
+        if (bank === "actions") selectedKey = "capture";
+        if (bank === "apps") selectedKey = appFocus || status?.integrations?.[0]?.id;
+        if (bank === "prefs") selectedKey = "confirmCapture";
+        if (bank === "fix") selectedKey = "retry";
+        if (bank === "decide" && !decideItem) void loadTopPending();
+        if (composing) {
+          if (opts.text != null) composeText.value = opts.text;
+          composeHint.textContent = opts.hint || "New capture";
+          composeText.focus();
+        }
+        renderContext();
+        renderList();
+        renderDial();
+        window.residence.pillResize?.(bank);
+        // Navigating is the moment the user looks at this data, so make sure it
+        // is not whatever we cached up to ten seconds ago.
+        void refresh();
+      }
+
+      document.getElementById("banks").onclick = (e) => {
+        const btn = e.target.closest("button[data-bank]");
+        if (!btn) return;
+        setBank(btn.dataset.bank);
+      };
+
+      orb.onclick = () => void refresh();
+      dialBtn.onclick = () => void activateDial();
+      acceptCircle.onclick = () => void resolveDecide(false);
+      declineCircle.onclick = () => void resolveDecide(true);
+
+      composeCancel.onclick = async () => {
+        composeText.value = "";
+        await window.residence.composerCancel();
+      };
+
+      composeText.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          void activateDial();
+        }
+      });
+
+      listEl.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const items = currentItems();
+          if (!items.length) return;
+          const idx = Math.max(0, items.findIndex((i) => i.key === selectedKey));
+          const next =
+            items[Math.min(items.length - 1, Math.max(0, idx + (e.deltaY > 0 ? 1 : -1)))];
+          if (next && !next.info) {
+            selectedKey = next.key;
+            if (bank === "apps") appFocus = next.key;
+            renderList();
+            renderDial();
+          }
+        },
+        { passive: false }
+      );
+
+      function fixItems() {
+        const items = [];
+        // Accessibility first — without it Capture is dead.
+        if (status?.permissions?.accessibility === "needs_action") {
+          items.push({
+            key: "perm:accessibility",
+            label: "Allow Accessibility",
+            perm: true,
+            accessibility: true,
+          });
+        }
+        (status?.writebackRetries || []).forEach((r) => {
+          items.push({
+            key: `retry:${r.operationId}`,
+            label: `Retry ${r.actionApp}`,
+            retryId: r.operationId,
+          });
+        });
+        Object.entries(status?.permissions || {}).forEach(([name, state]) => {
+          if (name === "accessibility") return; // already first
+          if (state === "needs_action") {
+            items.push({
+              key: `perm:${name}`,
+              label: `Allow ${name.replace(/_/g, " ")}`,
+              perm: true,
+            });
+          }
+        });
+        if (status && !status.coreOk) {
+          items.push({ key: "core", label: "Core offline — how to start", core: true });
+        }
+        (status?.failedHotkeys || []).forEach((combo) => {
+          items.push({ key: `hotkey:${combo}`, label: `${combo} in use`, info: true });
+        });
+        return items;
+      }
+
+      function buildSwitch(on) {
+        const sw = document.createElement("span");
+        sw.className = `switch${on ? " on" : ""}`;
+        const knob = document.createElement("span");
+        knob.className = "knob";
+        sw.append(knob);
+        return sw;
+      }
+
+      /**
+       * Tapping a row is the ONLY way to flip a pref — the dial used to also
+       * toggle the selected pref, so tapping a row then the dial (which felt
+       * like "confirming") silently flipped it straight back off.
+       */
+      async function togglePref(key) {
+        const next = !status?.prefs?.[key];
+        if (status?.prefs) status.prefs[key] = next; // optimistic, so the switch flips instantly
+        renderList();
+        try {
+          await window.residence.setPref(key, next);
+        } catch (e) {
+          if (status?.prefs) status.prefs[key] = !next;
+          showToast({ kicker: "Couldn't save", title: errText(e), tone: "error" });
+        }
+        await refresh();
+      }
+
+      async function toggleAppPolicy(key) {
+        const app = (status?.integrations || []).find((i) => i.id === key);
+        const cur = status?.capturePolicies?.[key] || (app?.enabled === false ? "off" : "on");
+        const next = cur === "on" ? "off" : "on";
+        if (status) status.capturePolicies = { ...(status.capturePolicies || {}), [key]: next };
+        renderList();
+        try {
+          await window.residence.setPolicy("capturePolicies", key, next);
+        } catch (e) {
+          if (status) status.capturePolicies = { ...(status.capturePolicies || {}), [key]: cur };
+          showToast({ kicker: "Couldn't save", title: errText(e), tone: "error" });
+        }
+        await refresh();
+      }
+
+      function truncate(text, n) {
+        const t = String(text || "").trim();
+        return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+      }
+
+      /** One-line "what's being saved / what disagrees" shown above the list. */
+      function renderContext() {
+        if (bank !== "decide" || !decideItem) {
+          contextEl.innerHTML = "";
+          return;
+        }
+        if (decideItem.kind === "contradiction") {
+          const was = truncate(decideItem.payload?.existing, 26);
+          const now = truncate(decideItem.payload?.incoming, 26);
+          contextEl.innerHTML = `Was <b>${escapeHtml(was)}</b> → now <b>${escapeHtml(now)}</b>`;
+          return;
+        }
+        const from = decideItem.source ? prettySource(decideItem.source) : "";
+        const preview = truncate(
+          decideItem.summary || decideItem.payload?.summary || decideItem.title,
+          from ? 38 : 48
+        );
+        contextEl.innerHTML = from
+          ? `From <b>${escapeHtml(from)}</b> · ${escapeHtml(preview)}`
+          : escapeHtml(preview);
+      }
+
+      function prettySource(source) {
+        return String(source || "")
+          .replace(/[-_]/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+
+      function escapeHtml(s) {
+        return String(s || "").replace(/[&<>"']/g, (c) => (
+          { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+        ));
+      }
+
+      function currentItems() {
+        if (bank === "actions") return ACTIONS;
+        if (bank === "prefs") return PREFS;
+        if (bank === "apps") {
+          return (status?.integrations || []).map((i) => ({
+            key: i.id,
+            label: i.name,
+            app: i,
+          }));
+        }
+        if (bank === "decide") {
+          if (!decideItem) return [{ key: "none", label: "Inbox empty", info: true }];
+          // Accept/Decline live as the tick/cross circles on the right — the
+          // list here is only for picking *where* an accepted capture goes.
+          if (decideItem.kind === "contradiction") {
+            return [{ key: "info", label: "✓ accept new · ✕ keep saved", info: true }];
+          }
+          const opts = decideItem.actionOptions?.length
+            ? decideItem.actionOptions
+            : [
+                { destination: "notes", label: "Notes" },
+                { destination: "calendar", label: "Calendar" },
+                { destination: "reminders", label: "Reminders" },
+              ];
+          return opts.map((o) => ({
+            key: o.destination || "notes",
+            label: o.label || o.destination,
+          }));
+        }
+        if (bank === "fix") {
+          const items = fixItems();
+          return items.length ? items : [{ key: "ok", label: "All clear", info: true }];
+        }
+        return [];
+      }
+
+      function renderList() {
+        if (bank === "compose") return;
+        const items = currentItems();
+        if (!items.find((i) => i.key === selectedKey) && items[0]) selectedKey = items[0].key;
+        const idx = Math.max(0, items.findIndex((i) => i.key === selectedKey));
+        let start = Math.max(0, idx - 1);
+        if (start + 3 > items.length) start = Math.max(0, items.length - 3);
+        listEl.innerHTML = "";
+        items.slice(start, start + 3).forEach((item) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          const classes = [item.key === selectedKey ? "on" : ""];
+          if (item.info) classes.push("info");
+          b.className = classes.filter(Boolean).join(" ");
+          b.append(document.createTextNode(item.label));
+          if (bank === "prefs") {
+            b.append(buildSwitch(!!status?.prefs?.[item.key]));
+          }
+          if (bank === "apps" && item.app) {
+            const cap =
+              status?.capturePolicies?.[item.key] || (item.app.enabled === false ? "off" : "on");
+            b.append(buildSwitch(cap === "on"));
+          }
+          if (item.info) {
+            listEl.append(b);
+            return;
+          }
+          b.onclick = async () => {
+            selectedKey = item.key;
+            if (bank === "apps") appFocus = item.key;
+            renderList();
+            renderDial();
+            if (bank === "actions" && item.run) await item.run();
+            if (bank === "prefs") await togglePref(item.key);
+            if (bank === "apps") await toggleAppPolicy(item.key);
+            if (bank === "fix") await runFix(item);
+            // decide: tapping a row only picks the destination — Accept/Decline
+            // are the tick/cross circles, so there is no second "confirm" tap
+            // that can silently undo the choice.
+          };
+          listEl.append(b);
+        });
+      }
+
+      async function runFix(item) {
+        if (item.retryId) {
+          try {
+            const res = await window.residence.retryWriteback(item.retryId);
+            showToast(
+              res?.ok
+                ? { kicker: "Retried", title: "Written to your Mac apps" }
+                : {
+                    kicker: "Still failing",
+                    title: res?.error || "Write-back was refused",
+                    tone: "error",
+                  }
+            );
+          } catch (e) {
+            showToast({ kicker: "Retry failed", title: errText(e), tone: "error" });
+          }
+          await refresh();
+          return;
+        }
+        if (item.perm) {
+          if (item.accessibility && window.residence.openAccessibility) {
+            await window.residence.openAccessibility();
+          } else {
+            await window.residence.openPrivacy();
+          }
+          return;
+        }
+        if (item.core) {
+          showToast({
+            kicker: "Core offline",
+            title: "Start Core, then captures flush automatically",
+            body: "Run ./scripts/residence-up.sh — queued captures are kept safe.",
+            tone: "warn",
+            ms: 10000,
+          });
+        }
+      }
+
+      function renderDial() {
+        const pending = status?.pendingCount || 0;
+        orb.classList.toggle("on", !!status?.coreOk);
+        fixDot.hidden = fixItems().length === 0;
+
+        const isDecide = bank === "decide" && !!decideItem;
+        dialDefault.classList.toggle("hide", isDecide);
+        dialDecideEl.classList.toggle("on", isDecide);
+        if (isDecide) {
+          decideHint.textContent =
+            decideItem.kind === "contradiction"
+              ? "notes disagree"
+              : `${(decideItem.queueIndex || 0) + 1}/${decideItem.queueTotal || 1}`;
+          return;
+        }
+
+        if (bank === "compose") {
+          const hasText = !!(composeText.value || "").trim();
+          dialLab.textContent = "Send";
+          dialVal.textContent = "→";
+          dialHint.textContent = hasText ? "⌘↵ send" : "type to save";
+          return;
+        }
+        if (bank === "decide") {
+          dialLab.textContent = "Save";
+          dialVal.textContent = "—";
+          dialHint.textContent = "empty";
+          return;
+        }
+        if (bank === "actions") {
+          dialLab.textContent = pending ? "Inbox" : "Go";
+          dialVal.textContent = pending ? String(pending).padStart(2, "0") : "→";
+          dialHint.textContent = pending
+            ? "tap review"
+            : status?.coreOk
+              ? "⌘⇧R to capture"
+              : "core off";
+          return;
+        }
+        if (bank === "prefs") {
+          // Tapping a row is the only way to flip a pref (see togglePref) — the
+          // dial is a read-only summary so it can never double-toggle.
+          const total = PREFS.length;
+          const onCount = PREFS.filter((p) => status?.prefs?.[p.key]).length;
+          dialLab.textContent = "Prefs";
+          dialVal.textContent = `${onCount}/${total}`;
+          dialHint.textContent = "tap a row";
+          return;
+        }
+        if (bank === "apps") {
+          const onCount = (status?.integrations || []).filter((i) => {
+            const cap = status?.capturePolicies?.[i.id] || (i.enabled === false ? "off" : "on");
+            return cap === "on";
+          }).length;
+          dialLab.textContent = "Apps";
+          dialVal.textContent = `${onCount}/${status?.integrations?.length || 0}`;
+          dialHint.textContent = "tap a row";
+          return;
+        }
+        const count = fixItems().length;
+        dialLab.textContent = "Fix";
+        dialVal.textContent = String(count).padStart(2, "0");
+        dialHint.textContent = count ? "tap first" : "all clear";
+      }
+
+      composeText.addEventListener("input", () => {
+        if (bank === "compose") renderDial();
+      });
+
+      function errText(e) {
+        return String(e?.message || e || "failed")
+          .replace(/^Error invoking remote method '[^']+':\s*/, "")
+          .replace(/^Error:\s*/, "")
+          .slice(0, 120);
+      }
+
+      async function activateDial() {
+        if (bank === "compose") {
+          const text = (composeText.value || "").trim();
+          if (!text) {
+            showToast({ kicker: "Compose", title: "Type something to save" });
+            return;
+          }
+          dialHint.textContent = "sending…";
+          try {
+            await window.residence.composerSend(text);
+            composeText.value = "";
+          } catch (e) {
+            showToast({ kicker: "Not sent", title: errText(e), tone: "error" });
+          }
+          renderDial();
+          return;
+        }
+        if (bank === "decide") {
+          if (!decideItem) showToast({ kicker: "Inbox", title: "Nothing to review" });
+          // Accept/Decline are the tick/cross circles now — see resolveDecide.
+          return;
+        }
+        if (bank === "actions") {
+          if (!(status?.pendingCount || 0)) {
+            showToast({ kicker: "Inbox", title: "Nothing to review" });
+            return;
+          }
+          await openInboxOnce();
+          return;
+        }
+        if (bank === "prefs" || bank === "apps") {
+          // Read-only summary — tapping a row is the only way to flip these
+          // (see togglePref / toggleAppPolicy), so the dial never fires a
+          // second, conflicting toggle.
+          return;
+        }
+        const first = fixItems()[0];
+        if (first) await runFix(first);
+      }
+
+      /** Accept (tick) or Decline (cross) the item currently in the Save bank. */
+      async function resolveDecide(declining) {
+        if (!decideItem) {
+          showToast({ kicker: "Inbox", title: "Nothing to review" });
+          return;
+        }
+        const item = decideItem;
+        // Contradictions only ever resolve to the Fact graph, regardless of
+        // which destination happens to be highlighted in the list.
+        const destKey = item.kind === "contradiction" ? "notes" : selectedKey;
+        decideHint.textContent = declining ? "skipping…" : "saving…";
+        // Main advances the queue for us; clear locally so a stale item cannot
+        // be resolved twice by an impatient double tap.
+        decideItem = null;
+        awaitingInboxPush = true;
+        try {
+          await window.residence.resolve(
+            item.id,
+            !declining,
+            declining ? "facts-only" : destKey,
+            declining ? null : destKey,
+            ""
+          );
+        } catch (e) {
+          decideItem = item;
+          showToast({ kicker: "Save failed", title: errText(e), tone: "error", ms: 8000 });
+        } finally {
+          awaitingInboxPush = false;
+        }
+        await refresh();
+      }
+
+      async function openInboxOnce() {
+        if (awaitingInboxPush) return;
+        awaitingInboxPush = true;
+        try {
+          await window.residence.openInbox();
+        } finally {
+          awaitingInboxPush = false;
+        }
+      }
+
+      async function loadTopPending() {
+        if (decideItem || awaitingInboxPush) return;
+        const s = await window.residence.getStatus();
+        status = s;
+        if ((s.pendingCount || 0) > 0) await openInboxOnce();
       }
 
       async function refresh() {
-        const s = await window.residence.getStatus();
-        meta.textContent = `${s.coreOk ? "Core connected" : "Core offline"} · ${
-          s.pendingCount || 0
-        } pending · frontmost: ${s.frontmost || "—"} · ${s.coreUrl}${
-          s.quietNow ? " · quiet hours" : ""
-        }`;
-
-        diagnostics.innerHTML = "";
-        Object.entries(s.permissions || {}).forEach(([name, state]) => {
-          diagnostics.appendChild(
-            el("span", state === "needs_action" ? "bad" : "", `${name}: ${state}`)
-          );
-        });
-        if ((s.failedHotkeys || []).length) {
-          diagnostics.appendChild(
-            el("span", "bad", `hotkeys blocked: ${s.failedHotkeys.join(", ")}`)
-          );
-        }
-        if ((s.acceptStack || []).length) {
-          diagnostics.appendChild(el("span", "", `undo stack: ${s.acceptStack.length}`));
-        }
-
-        prefs.innerHTML = "";
-        prefs.append(
-          prefToggle("Edit before send", "confirmCapture", s.prefs?.confirmCapture),
-          prefToggle("Open at login", "openAtLogin", s.prefs?.openAtLogin),
-          prefToggle("Show Dock icon", "showDock", s.prefs?.showDock),
-          prefToggle("Quiet hours 22:00–08:00", "quietHours", s.prefs?.quietHours)
-        );
-
-        list.innerHTML = "";
-        (s.integrations || []).forEach((i) => {
-          const row = el("li");
-          const copy = el("div");
-          copy.append(el("strong", "", i.name));
-          copy.append(el("span", "", i.detail));
-          row.append(copy);
-          const controls = el("div");
-          const capture = document.createElement("select");
-          ["on", "off"].forEach((value) => {
-            const opt = new Option(`capture ${value}`, value);
-            opt.selected =
-              value === (s.capturePolicies?.[i.id] || (i.enabled === false ? "off" : "on"));
-            capture.add(opt);
-          });
-          capture.onchange = () =>
-            window.residence.setPolicy("capturePolicies", i.id, capture.value);
-          controls.append(capture);
-          if (i.writeBack) {
-            const write = document.createElement("select");
-            ["on", "confirm", "off"].forEach((value) => {
-              const opt = new Option(`write ${value}`, value);
-              opt.selected = value === (s.writeBackPolicies?.[i.id] || "on");
-              write.add(opt);
-            });
-            write.onchange = () =>
-              window.residence.setPolicy("writeBackPolicies", i.id, write.value);
-            controls.append(write);
-          }
-          row.append(controls);
-          list.append(row);
-        });
-
-        recovery.innerHTML = "";
-        const outbox = s.outbox || [];
-        recovery.append(
-          el(
-            "div",
-            "recovery",
-            outbox.length
-              ? `${outbox.length} capture(s) queued for delivery.`
-              : "Capture outbox clear."
-          )
-        );
-        (s.writebackRetries || []).forEach((r) => {
-          const row = el(
-            "div",
-            "recovery",
-            `Write-back pending: ${r.actionApp} · ${r.lastError || "retry needed"}`
-          );
-          const retry = el("button", "ghost", "Retry");
-          retry.onclick = async () => {
-            retry.disabled = true;
-            await window.residence.retryWriteback(r.operationId);
-            refresh();
-          };
-          row.append(document.createTextNode(" "));
-          row.append(retry);
-          recovery.append(row);
-        });
-
-        const a = await window.residence.fetchActivity();
-        activity.innerHTML = "";
-        if (!a.ok || !(a.activity || []).length) {
-          activity.append(
-            el("div", "recovery", "No desktop activity yet — capture something.")
-          );
+        try {
+          status = await window.residence.getStatus();
+        } catch {
           return;
         }
-        a.activity.slice(0, 8).forEach((ev) => {
-          const when = new Date((ev.at || 0) * 1000).toLocaleTimeString();
-          activity.append(
-            el(
-              "div",
-              "recovery",
-              `${when} · ${ev.event}${ev.source ? " · " + ev.source : ""}${
-                ev.preview ? " — " + ev.preview : ""
-              }`
-            )
-          );
-        });
+        if (bank === "apps" && !appFocus && status.integrations?.[0]) {
+          appFocus = status.integrations[0].id;
+          selectedKey = appFocus;
+        }
+        renderList();
+        renderDial();
       }
 
-      refresh();
-      // Slow poll — was 2.5s and starved Core rate limit (Accept → Notes failed with 429)
-      setInterval(refresh, 10000);
-      window.residence.onStatus(() => refresh());
+      window.residence.onToast((msg) => {
+        if (!msg) return;
+        showToast(msg);
+      });
+
+      window.residence.onPill((msg) => {
+        if (!msg) return;
+        if (msg.view === "compose") {
+          const draft = msg.draft || {};
+          setBank("compose", { text: draft.text || "", hint: draft.title || "New capture" });
+          return;
+        }
+        if (msg.view === "decide") {
+          decideItem = msg.item || null;
+          selectedKey =
+            decideItem?.primaryDestination || decideItem?.actionOptions?.[0]?.destination || "notes";
+          setBank("decide");
+          return;
+        }
+        if (["actions", "apps", "prefs", "fix"].includes(msg.view)) setBank(msg.view);
+      });
+
+      window.residence.onStatus(() => void refresh());
+
+      void refresh();
+      setInterval(() => void refresh(), 10000);
     </script>
   </body>
 </html>

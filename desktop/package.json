@@ -7,10 +7,13 @@
   "license": "Apache-2.0",
   "scripts": {
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
-    "dev": "env -u ELECTRON_RUN_AS_NODE electron .",
-    "pack": "env -u ELECTRON_RUN_AS_NODE electron-builder --dir",
-    "dist": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac zip",
-    "dist:dmg": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac dmg",
+    "dev": "npm run start",
+    "test": "node --test integrations/*.test.js && npm run test:pill",
+    "test:pill": "env -u ELECTRON_RUN_AS_NODE electron tools/pill-smoke.js",
+    "pack": "env -u ELECTRON_RUN_AS_NODE electron-builder --dir && npm run sign:adhoc",
+    "dist": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac zip && npm run sign:adhoc",
+    "dist:dmg": "env -u ELECTRON_RUN_AS_NODE electron-builder --mac dmg && npm run sign:adhoc",
+    "sign:adhoc": "bash -c 'APP=dist/mac-arm64/Residence.app; test -d \"$APP\" || APP=dist/mac/Residence.app; codesign --force --deep --sign - \"$APP\" && xattr -cr \"$APP\"'",
     "dist:release": "bash ../scripts/release-mac.sh"
   },
   "build": {
@@ -21,15 +24,13 @@
       "category": "public.app-category.productivity",
       "target": ["zip", "dmg"],
       "identity": null,
-      "hardenedRuntime": true,
-      "gatekeeperAssess": true,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "extendInfo": {
         "LSUIElement": true,
         "NSAppleEventsUsageDescription": "Residence writes accepted Facts into Calendar, Notes, and Reminders.",
-        "NSMicrophoneUsageDescription": "Residence listens when you speak a capture — e.g. save this to Notes or Calendar.",
-        "NSSpeechRecognitionUsageDescription": "Residence turns your speech into text that stays so you can edit and send.",
         "NSAppleScriptEnabled": true,
         "NSHumanReadableCopyright": "Residence — personal context graph",
         "CFBundleURLTypes": [
@@ -46,19 +47,10 @@
     "files": [
       "main.js",
       "preload.js",
-      "permission.html",
-      "permission.css",
-      "permission.js",
       "status.html",
-      "first-run.html",
-      "hud.html",
-      "hud.css",
-      "hud.js",
-      "composer.html",
-      "composer.css",
-      "composer.js",
       "entitlements.mac.plist",
       "integrations/**/*",
+      "!integrations/*.test.js",
       "assets/**/*"
     ],
     "extraResources": [

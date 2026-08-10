@@ -1,39 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import App from "./App";
+import ResidenceWeb from "./ResidenceWeb";
 
-type Tab = "mac" | "illustration";
+type Surface = "mac" | "browser";
 
 const VIDEO_SRC = "/video/residence.mp4";
 const PARAMS = new URLSearchParams(window.location.search);
-/** Judge / smart / explicit demo: skip film + gate chrome, open phone shell. */
-const FORCE_SHELL = PARAMS.has("judge") || PARAMS.has("smart");
+/** Judge / smart: keep the phone demo shell for submission replay. */
+const FORCE_PHONE = PARAMS.has("judge") || PARAMS.has("smart");
+/** Skip film and open the browser Residence product. */
+const FORCE_WEB =
+  PARAMS.has("app") ||
+  PARAMS.has("web") ||
+  ["integrations", "capture", "accept"].includes(PARAMS.get("page") || "");
 
-function initialTab(): Tab {
+function initialSurface(): Surface {
   const t = PARAMS.get("tab");
-  if (t === "demo" || t === "illustration") return "illustration";
+  if (t === "browser" || t === "demo" || t === "illustration") return "browser";
   return "mac";
 }
 
 export default function Landing() {
-  const [introDone, setIntroDone] = useState(FORCE_SHELL);
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [enterHome, setEnterHome] = useState(false);
+  const [introDone, setIntroDone] = useState(FORCE_PHONE || FORCE_WEB);
+  const [surface, setSurface] = useState<Surface>(initialSurface);
+  const [enterHome, setEnterHome] = useState(FORCE_WEB);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [videoMuted, setVideoMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const downloadUrl = useMemo(
-    () => `${window.location.origin}/mac/Residence-mac.zip`,
-    []
-  );
+  const downloadUrl = useMemo(() => {
+    const host = window.location.hostname;
+    const local = host === "localhost" || host === "127.0.0.1";
+    if (local) return `${window.location.origin}/mac/Residence-mac.zip`;
+    return (
+      import.meta.env.VITE_MAC_ZIP_URL ||
+      "https://github.com/Aditya-Sarna/residencehackathon/releases/download/mac-v1.0.0/Residence-mac.zip"
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     QRCode.toDataURL(downloadUrl, {
       width: 360,
       margin: 2,
-      color: { dark: "#0C0C0C", light: "#FFFFFF" },
+      color: { dark: "#0A0A0A", light: "#FFFFFF" },
       errorCorrectionLevel: "M",
     }).then((url) => {
       if (!cancelled) setQrDataUrl(url);
@@ -44,20 +55,32 @@ export default function Landing() {
   }, [downloadUrl]);
 
   useEffect(() => {
-    if (introDone || FORCE_SHELL) return;
+    if (introDone || FORCE_PHONE || FORCE_WEB) return;
     const el = videoRef.current;
     if (!el) return;
+    el.defaultMuted = true;
     el.muted = true;
     el.playsInline = true;
-    void el.play()?.catch(() => {});
+    el.setAttribute("playsinline", "true");
+    el.setAttribute("webkit-playsinline", "true");
+    const tryPlay = () => {
+      void el.play()?.catch(() => {});
+    };
+    tryPlay();
+    el.addEventListener("loadeddata", tryPlay);
+    el.addEventListener("canplay", tryPlay);
+    return () => {
+      el.removeEventListener("loadeddata", tryPlay);
+      el.removeEventListener("canplay", tryPlay);
+    };
   }, [introDone]);
 
   useEffect(() => {
-    if (FORCE_SHELL || !introDone) return;
+    if (FORCE_PHONE || FORCE_WEB || !introDone || enterHome) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab === "illustration" ? "illustration" : "mac");
+    url.searchParams.set("tab", surface);
     window.history.replaceState({}, "", url.toString());
-  }, [tab, introDone]);
+  }, [surface, introDone, enterHome]);
 
   const enableVideoSound = () => {
     const el = videoRef.current;
@@ -68,13 +91,22 @@ export default function Landing() {
     void el.play().catch(() => {});
   };
 
-  if (FORCE_SHELL || enterHome) {
+  const pickSurface = (next: Surface) => {
+    setSurface(next);
+    if (next === "browser") setEnterHome(true);
+  };
+
+  if (FORCE_PHONE) {
     return <App skipVideo />;
+  }
+
+  if (enterHome || FORCE_WEB) {
+    return <ResidenceWeb />;
   }
 
   if (!introDone) {
     return (
-      <div className="video-stage">
+      <div className="rw-root video-stage">
         <video
           ref={videoRef}
           src={VIDEO_SRC}
@@ -84,13 +116,18 @@ export default function Landing() {
           preload="auto"
           controls={false}
           onEnded={() => setIntroDone(true)}
+          onError={() => setIntroDone(true)}
         />
         {videoMuted && (
-          <button className="video-sound" type="button" onClick={enableVideoSound}>
+          <button className="rw-btn ghost video-sound" type="button" onClick={enableVideoSound}>
             Enable sound
           </button>
         )}
-        <button className="video-skip" type="button" onClick={() => setIntroDone(true)}>
+        <button
+          className="rw-btn solid video-skip"
+          type="button"
+          onClick={() => setIntroDone(true)}
+        >
           Continue
         </button>
       </div>
@@ -98,49 +135,57 @@ export default function Landing() {
   }
 
   return (
-    <div className="gate home-gate">
-      <header className="gate-top">
-        <p className="gate-brand" aria-label="Home">
-          Home
-        </p>
-        <nav className="gate-tabs" aria-label="Home">
-          <button
-            type="button"
-            className={tab === "mac" ? "on" : ""}
-            onClick={() => setTab("mac")}
-          >
-            Residence on Mac
-          </button>
-          <button
-            type="button"
-            className={tab === "illustration" ? "on" : ""}
-            onClick={() => setTab("illustration")}
-          >
-            Conceptual illustration
-          </button>
-        </nav>
+    <div className="rw-root gate home-gate">
+      <header className="rw-nav gate-nav-center">
+        <div className="rw-brand">
+          <span className="rw-logo">Residence</span>
+        </div>
       </header>
 
-      {tab === "mac" && (
-        <section className="gate-download">
+      <div className="gate-hero">
+        <div
+          className="glass-toggle"
+          role="tablist"
+          aria-label="Residence surface"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={surface === "mac"}
+            className={surface === "mac" ? "on" : ""}
+            onClick={() => pickSurface("mac")}
+          >
+            Residence on desktop (Mac)
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={surface === "browser"}
+            className={surface === "browser" ? "on" : ""}
+            onClick={() => pickSurface("browser")}
+          >
+            Residence on browser
+          </button>
+        </div>
+      </div>
+
+      {surface === "mac" && (
+        <main className="rw-main gate-download">
           <div className="gate-copy">
-            <p className="gate-kicker">Residence / Home</p>
-            <h1>On your Mac</h1>
-            <p>
-              Scan the QR, unzip, open. Menu-bar Home for a shared personal Fact graph —
-              capture, Accept, write back.
+            <p className="rw-crumb">RESIDENCE / MAC</p>
+            <h1 className="rw-h1">On your Mac</h1>
+            <p className="rw-lead">
+              Scan the QR, unzip, open. Menu-bar agent for a shared Fact graph — capture,
+              Accept, write back.
             </p>
-            <a className="gate-link" href={downloadUrl} download>
+            <a className="rw-btn solid gate-download-btn" href={downloadUrl} download>
               Download Residence-mac.zip
             </a>
             <ol className="gate-steps">
-              <li>Unzip → open <code>Residence.app</code></li>
+              <li>Unzip → open <code>Residence.app</code> (menu-bar agent)</li>
               <li>If blocked: Privacy &amp; Security → Open Anyway</li>
-              <li>Core on :8700 · ⌘⇧R capture · ⌘⇧I inbox</li>
+              <li>⌘⇧R capture · ⌘⇧A accept · ⌘⇧I inbox · Core :8700</li>
             </ol>
-            <p className="gate-note">
-              Apple Silicon · unsigned build · Open Anyway if prompted
-            </p>
           </div>
           <div className="gate-qr">
             {qrDataUrl ? (
@@ -155,25 +200,7 @@ export default function Landing() {
             )}
             <span>Scan on your Mac</span>
           </div>
-        </section>
-      )}
-
-      {tab === "illustration" && (
-        <section className="gate-illustration">
-          <div className="gate-illu-copy">
-            <p className="gate-script">Residence / Home</p>
-            <p className="gate-illu-line">
-              One shared personal context graph — so your apps stop lying to each other.
-            </p>
-            <button
-              type="button"
-              className="gate-link"
-              onClick={() => setEnterHome(true)}
-            >
-              Enter Home
-            </button>
-          </div>
-        </section>
+        </main>
       )}
     </div>
   );
